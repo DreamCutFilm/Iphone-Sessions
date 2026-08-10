@@ -1,0 +1,28 @@
+# Заголовки для Cloudflare Pages.
+#
+# Файл читає сам хостинг — у репозиторії він нічого не робить, але без нього
+# два місця ламаються тихо й неочевидно.
+
+# Cloudflare за замовчуванням віддає .webmanifest як бінарний файл, і тоді
+# Safari не бачить назви та іконки застосунку при додаванні на екран «Додому».
+/manifest.webmanifest
+  Content-Type: application/manifest+json; charset=utf-8
+
+# Service worker не можна кешувати надовго: інакше пристрій продовжить
+# виконувати стару копію і нова версія застосунку до нього ніколи не доїде.
+/sw.js
+  Cache-Control: no-cache, must-revalidate
+  Content-Type: text/javascript; charset=utf-8
+
+# Сама сторінка теж має перевірятися щоразу — офлайн-режим забезпечує
+# service worker, а не кеш браузера.
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+
+# Застосунок нікуди не ходить по мережі, тож забороняємо це на рівні політики:
+# якщо колись зʼявиться сторонній скрипт, він просто не запуститься.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer

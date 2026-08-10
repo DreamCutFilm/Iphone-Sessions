@@ -1,0 +1,24 @@
+# Перевірка розрахункового ядра.
+#
+# Публікацією займається Cloudflare Pages — він сам стежить за репозиторієм
+# і викладає нову версію після кожного push. Тут лишається головне: не дати
+# зламаній формулі доїхати до телефона непоміченою.
+
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Тести ядра
+        run: npm test
