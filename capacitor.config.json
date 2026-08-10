@@ -1,0 +1,12 @@
+{
+  "appId": "com.dreamcut.ops",
+  "appName": "DreamCut Ops",
+  "webDir": ".",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#0b0c0e"
+  },
+  "server": {
+    "iosScheme": "capacitor"
+  }
+}

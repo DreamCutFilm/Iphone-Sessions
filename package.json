@@ -1,0 +1,14 @@
+{
+  "name": "dreamcut-ops",
+  "version": "1.0.0",
+  "description": "Робочий інструмент оператора: проєкти, дедлайни, задачі, ідеї та кінорозрахунки. PWA, працює офлайн.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/core.test.mjs",
+    "start": "python3 -m http.server 8080",
+    "icons": "python3 tools/make-icons.py"
+  },
+  "keywords": ["cinematography", "pwa", "offline", "ios"],
+  "license": "MIT"
+}

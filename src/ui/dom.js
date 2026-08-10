@@ -1,0 +1,116 @@
+// Мінімальні помічники для роботи з DOM.
+//
+// Без фреймворку — щоб застосунок відкривався миттєво, важив кілька десятків
+// кілобайт і не мав збірки. Це ж робить перенесення в нативну оболонку
+// тривіальним: там просто лежать ті самі файли.
+
+/**
+ * el('div.card', { onclick }, 'текст', childNode)
+ * Селектор підтримує теги, класи (.card) та id (#main).
+ */
+export function el(selector, props = null, ...children) {
+  const { tag, id, classes } = parseSelector(selector);
+  const node = document.createElement(tag);
+  if (id) node.id = id;
+  if (classes.length) node.className = classes.join(' ');
+
+  if (props && typeof props === 'object' && !isRenderable(props)) {
+    applyProps(node, props);
+  } else if (props !== null && props !== undefined) {
+    children.unshift(props);
+  }
+
+  append(node, children);
+  return node;
+}
+
+function parseSelector(selector) {
+  const [head, ...classes] = String(selector).split('.');
+  const [tag, id] = head.split('#');
+  return { tag: tag || 'div', id, classes };
+}
+
+function isRenderable(value) {
+  return value instanceof Node || Array.isArray(value);
+}
+
+function applyProps(node, props) {
+  for (const [key, value] of Object.entries(props)) {
+    if (value === null || value === undefined || value === false) continue;
+
+    if (key === 'class') node.className = [node.className, value].filter(Boolean).join(' ');
+    else if (key === 'style' && typeof value === 'object') Object.assign(node.style, value);
+    else if (key === 'dataset') Object.assign(node.dataset, value);
+    else if (key.startsWith('on') && typeof value === 'function') {
+      node.addEventListener(key.slice(2), value);
+    } else if (key in node && key !== 'list') {
+      node[key] = value;
+    } else {
+      node.setAttribute(key, value === true ? '' : value);
+    }
+  }
+}
+
+function append(node, children) {
+  for (const child of children.flat(Infinity)) {
+    if (child === null || child === undefined || child === false) continue;
+    node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+  }
+}
+
+export function clear(node) {
+  while (node.firstChild) node.firstChild.remove();
+}
+
+export function mount(container, ...children) {
+  clear(container);
+  append(container, children);
+  return container;
+}
+
+/** Текст, який показуємо замість порожнього списку. */
+export function emptyState(title, hint, action = null) {
+  return el('div.empty', el('p.empty-title', title), hint && el('p.empty-hint', hint), action);
+}
+
+export function icon(name) {
+  return el('span.icon', { 'aria-hidden': 'true' }, ICONS[name] ?? '');
+}
+
+// Іконки — емодзі: не тягнуть шрифтів, однаково виглядають на всіх iPhone.
+const ICONS = {
+  overview: '◎',
+  projects: '▣',
+  tasks: '✓',
+  ideas: '✳',
+  calc: 'ƒ',
+  settings: '⚙',
+  add: '+',
+  back: '‹',
+  close: '×',
+  shoot: '🎥',
+  deadline: '⚑',
+  reminder: '🔔',
+  sun: '☀',
+};
+
+/** Коротке спливне повідомлення внизу екрана. */
+let toastTimer = null;
+export function toast(message, { error = false } = {}) {
+  let node = document.querySelector('.toast');
+  if (!node) {
+    node = el('div.toast');
+    document.body.append(node);
+  }
+  node.textContent = message;
+  node.classList.toggle('toast--error', error);
+  node.classList.add('toast--visible');
+
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => node.classList.remove('toast--visible'), 2600);
+}
+
+/** Тактильний відгук там, де він доречний (підтримується не всюди). */
+export function haptic() {
+  if (typeof navigator.vibrate === 'function') navigator.vibrate(8);
+}
