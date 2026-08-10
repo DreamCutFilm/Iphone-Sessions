@@ -8,11 +8,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches:
-      - main
-      # Робоча гілка тут тимчасово, щоб застосунок опублікувався ще до злиття
-      # в main. Після злиття цей рядок можна прибрати.
-      - claude/cloud-code-mobile-97ngmn
+    branches: [main]
   workflow_dispatch:
 
 permissions:
