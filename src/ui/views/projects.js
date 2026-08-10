@@ -1,0 +1,125 @@
+// Проєкти: список за стадіями та картка окремого проєкту.
+
+import { el, emptyState } from '../dom.js';
+import { pageHeader, sectionTitle, projectCard, taskRow, chip, fab, dueVariant, formatMoney } from '../components.js';
+import { editProject, editTask } from '../editors.js';
+import { getState } from '../../core/store.js';
+import { projectById, tasksOfProject } from '../../core/selectors.js';
+import { PROJECT_STATUSES, ACTIVE_STATUSES, statusLabel } from '../../core/models.js';
+import { formatDate, describeDue, weekdayShort, daysUntil } from '../../core/dates.js';
+import { navigate } from '../router.js';
+
+export function projectsView() {
+  const state = getState();
+  const page = el('div.page');
+
+  page.append(pageHeader('Проєкти', {
+    subtitle: `${state.projects.length} усього`,
+    action: el('button.icon-btn', { type: 'button', 'aria-label': 'Новий проєкт', onclick: () => editProject() }, '+'),
+  }));
+
+  if (!state.projects.length) {
+    page.append(emptyState(
+      'Проєктів ще немає',
+      'Проєкт — це рамка для дедлайну, знімальних днів, задач та ідей.',
+      el('button.btn.btn--primary', { type: 'button', onclick: () => editProject() }, 'Створити перший'),
+    ));
+    return page;
+  }
+
+  // Групуємо за стадією у природному порядку виробництва.
+  for (const status of PROJECT_STATUSES) {
+    const group = state.projects
+      .filter((project) => project.status === status.id)
+      .sort((a, b) => (a.deadline ?? '9999').localeCompare(b.deadline ?? '9999'));
+    if (!group.length) continue;
+
+    page.append(sectionTitle(status.label, el('span.section-hint', String(group.length))));
+    page.append(el('div.list', group.map((project) => {
+      const tasks = tasksOfProject(state, project.id);
+      return projectCard(project, {
+        taskCount: tasks.length,
+        openCount: tasks.filter((task) => !task.done).length,
+      });
+    })));
+  }
+
+  page.append(fab('Новий проєкт', () => editProject()));
+  return page;
+}
+
+export function projectDetailView(projectId) {
+  const state = getState();
+  const project = projectById(state, projectId);
+  const page = el('div.page');
+
+  if (!project) {
+    page.append(pageHeader('Проєкт', { back: '/projects' }));
+    page.append(emptyState('Проєкт не знайдено', 'Можливо, його видалили.'));
+    return page;
+  }
+
+  const tasks = tasksOfProject(state, project.id);
+  const openTasks = tasks.filter((task) => !task.done);
+  const doneTasks = tasks.filter((task) => task.done);
+  const ideas = state.ideas.filter((idea) => idea.projectId === project.id);
+
+  page.append(pageHeader(project.title, {
+    subtitle: project.client || null,
+    back: '/projects',
+    action: el('button.icon-btn', { type: 'button', 'aria-label': 'Редагувати', onclick: () => editProject(project) }, '✎'),
+  }));
+
+  const facts = [chip(statusLabel(project.status), `status-${project.status}`)];
+  if (project.deadline) facts.push(chip(`⚑ Здача ${formatDate(project.deadline)} · ${describeDue(project.deadline)}`, dueVariant(project.deadline)));
+  if (project.location) facts.push(chip(`📍 ${project.location}`));
+  if (typeof project.fee === 'number') facts.push(chip(`${formatMoney(project.fee)} · ${project.paid ? 'оплачено' : 'не оплачено'}`, project.paid ? '' : 'money'));
+  page.append(el('div.facts', facts));
+
+  if (project.notes) {
+    page.append(el('div.note-card', project.notes));
+  }
+
+  if (project.shootDays.length) {
+    page.append(sectionTitle('Знімальні дні'));
+    const sorted = [...project.shootDays].sort();
+    page.append(el('div.list', sorted.map((day) => {
+      const diff = daysUntil(day);
+      return el(
+        'article.row',
+        { class: diff < 0 ? 'is-past' : '' },
+        el('span.row-mark', '🎥'),
+        el('div.row-body',
+          el('p.row-title', `${formatDate(day)}, ${weekdayShort(day)}`),
+          el('p.row-note', diff === 0 ? 'Сьогодні' : describeDue(day))),
+      );
+    })));
+  }
+
+  page.append(sectionTitle(
+    'Задачі',
+    el('button.link', { type: 'button', onclick: () => editTask(null, { projectId: project.id }) }, '+ додати'),
+  ));
+  page.append(openTasks.length
+    ? el('div.list', openTasks.map((task) => taskRow(task, { onEdit: (item) => editTask(item) })))
+    : emptyState('Відкритих задач немає', 'Усе, що треба зробити для цього проєкту, тримай тут.'));
+
+  if (doneTasks.length) {
+    page.append(sectionTitle('Виконано', el('span.section-hint', String(doneTasks.length))));
+    page.append(el('div.list.list--muted', doneTasks.slice(0, 10).map((task) => taskRow(task, { onEdit: (item) => editTask(item) }))));
+  }
+
+  if (ideas.length) {
+    page.append(sectionTitle('Ідеї', el('button.link', { type: 'button', onclick: () => navigate('/ideas') }, 'усі')));
+    page.append(el('div.list', ideas.slice(0, 5).map((idea) => el(
+      'article.row',
+      el('span.row-mark', '✳'),
+      el('div.row-body', el('p.row-title', idea.title), idea.body && el('p.row-note', idea.body)),
+    ))));
+  }
+
+  page.append(fab('Нова задача', () => editTask(null, { projectId: project.id })));
+  return page;
+}
+
+export { ACTIVE_STATUSES };
