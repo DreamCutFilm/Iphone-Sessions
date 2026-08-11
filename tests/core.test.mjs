@@ -12,7 +12,11 @@ import { shutterSpeedFromAngle, angleFromShutterSpeed, speedRamp, ndFromStops, s
 import { sizeForDuration, durationForSize, effectiveMbps, getCodec, cardsNeeded } from '../src/core/cine/media.js';
 import { framesToTimecode, timecodeToFrames, durationBetween, addTimecodes, isDropFrameRate } from '../src/core/cine/timecode.js';
 import { sunTimes, shootingWindows } from '../src/core/cine/sun.js';
-import { daysUntil, describeDue, parseDateOnly, toDateOnly, plural } from '../src/core/dates.js';
+import { daysUntil, describeDue, parseDateOnly, toDateOnly, plural, expandDateRange } from '../src/core/dates.js';
+import {
+  lonLatToTile, tileToLonLat, tileUrl, clampZoom, wrapLongitude,
+  parseCoordinates, mapsLink,
+} from '../src/core/geo.js';
 import { taskOrder } from '../src/core/selectors.js';
 import { createTask, createProject } from '../src/core/models.js';
 import { formatMoney, currencySymbol, getCurrency, getLanguage, CURRENCIES, LANGUAGES } from '../src/core/locale.js';
@@ -220,6 +224,136 @@ test('сортування задач: спершу з датою, потім з
   const urgent = createTask({ title: 'Терміново', priority: 'high' });
   const someday = createTask({ title: 'Колись', priority: 'low' });
   assert.ok(taskOrder(urgent, someday) < 0, 'термінова йде вище');
+});
+
+test('знімальні дні: проміжок розгортається включно з обома кінцями', () => {
+  assert.deepEqual(expandDateRange('2026-08-12', '2026-08-14'), ['2026-08-12', '2026-08-13', '2026-08-14']);
+});
+
+test('знімальні дні: без другої дати виходить один день', () => {
+  assert.deepEqual(expandDateRange('2026-08-15', ''), ['2026-08-15']);
+  assert.deepEqual(expandDateRange('2026-08-15', null), ['2026-08-15']);
+});
+
+test('знімальні дні: перевернутий проміжок не дає порожнечі', () => {
+  // Користувач вписав «до» раніше за «від» — краще один день, ніж нічого.
+  assert.deepEqual(expandDateRange('2026-08-15', '2026-08-10'), ['2026-08-15']);
+});
+
+test('знімальні дні: проміжок через межу місяця', () => {
+  assert.deepEqual(expandDateRange('2026-08-30', '2026-09-02'),
+    ['2026-08-30', '2026-08-31', '2026-09-01', '2026-09-02']);
+});
+
+test('знімальні дні: помилка в році не додає тисячі днів', () => {
+  const days = expandDateRange('2026-08-01', '2126-08-01');
+  assert.equal(days.length, 90, 'спрацьовує запобіжник');
+});
+
+test('знімальні дні: без початкової дати не додається нічого', () => {
+  assert.deepEqual(expandDateRange('', '2026-08-14'), []);
+  assert.deepEqual(expandDateRange(null, null), []);
+});
+
+test('карта: координати й номери тайлів переводяться туди й назад', () => {
+  const zoom = 14;
+  const tile = lonLatToTile(30.5234, 50.4501, zoom);
+  const back = tileToLonLat(tile.x, tile.y, zoom);
+  near(back.latitude, 50.4501, 0.0001, 'широта');
+  near(back.longitude, 30.5234, 0.0001, 'довгота');
+});
+
+test('карта: горизонтальна координата збігається з формулою проєкції', () => {
+  // По довготі проєкція лінійна, тож очікуване значення виводиться просто:
+  // x = (довгота + 180) / 360 × 2^zoom. Це незалежна перевірка, а не
+  // запамʼятоване число.
+  const zoom = 10;
+  const longitude = 30.5234; // Київ
+  const expectedX = ((longitude + 180) / 360) * 2 ** zoom;
+
+  const tile = lonLatToTile(longitude, 50.4501, zoom);
+  near(tile.x, expectedX, 1e-9, 'номер тайла по горизонталі');
+  assert.equal(Math.floor(tile.x), 598);
+
+  // По вертикалі формула логарифмічна, тому звіряємо через зворотне
+  // перетворення: воно має повернути ту саму широту.
+  const back = tileToLonLat(tile.x, tile.y, zoom);
+  near(back.latitude, 50.4501, 1e-9, 'широта після зворотного перетворення');
+});
+
+test('карта: північ дає менший номер тайла, ніж південь', () => {
+  // Вісь Y у сітці зростає донизу — переплутаний знак тут найчастіша помилка.
+  const north = lonLatToTile(30, 60, 8);
+  const south = lonLatToTile(30, 40, 8);
+  assert.ok(north.y < south.y, 'північніша точка має бути вище на сітці');
+});
+
+test('карта: полюси не ламають проєкцію Меркатора', () => {
+  const tile = lonLatToTile(0, 89.9, 5);
+  assert.ok(Number.isFinite(tile.y), 'y має лишатися числом');
+  assert.ok(tile.y >= 0, 'і не вилітати за межі сітки');
+});
+
+test('карта: довгота загортається через 180-й меридіан', () => {
+  assert.equal(wrapLongitude(181), -179);
+  assert.equal(wrapLongitude(-181), 179);
+  assert.equal(wrapLongitude(30), 30);
+});
+
+test('карта: масштаб обмежений розумними межами', () => {
+  assert.equal(clampZoom(0), 2);
+  assert.equal(clampZoom(99), 18);
+  assert.equal(clampZoom(14), 14);
+});
+
+test('карта: адреса тайла складається правильно, а за межами сітки її немає', () => {
+  assert.equal(tileUrl(599, 351, 10), 'https://tile.openstreetmap.org/10/599/351.png');
+  // По вертикалі світ не замкнений — таких тайлів не існує.
+  assert.equal(tileUrl(0, -1, 10), null);
+  // А по горизонталі замкнений: тайл «за краєм» — це тайл з іншого боку.
+  assert.equal(tileUrl(-1, 5, 3), 'https://tile.openstreetmap.org/3/7/5.png');
+});
+
+test('координати: розбираються у звичних форматах вставки', () => {
+  assert.deepEqual(parseCoordinates('50.4501, 30.5234'), { latitude: 50.4501, longitude: 30.5234 });
+  assert.deepEqual(parseCoordinates('50.4501 30.5234'), { latitude: 50.4501, longitude: 30.5234 });
+  assert.deepEqual(parseCoordinates(' -33.8688;151.2093 '), { latitude: -33.8688, longitude: 151.2093 });
+});
+
+test('координати: сміття й неможливі значення відкидаються', () => {
+  assert.equal(parseCoordinates('десь у Києві'), null);
+  assert.equal(parseCoordinates('91, 30'), null, 'широта понад 90 неможлива');
+  assert.equal(parseCoordinates('50, 181'), null, 'довгота понад 180 неможлива');
+  assert.equal(parseCoordinates(''), null);
+});
+
+test('карти: посилання відкриває точку, а без точки — пошук за адресою', () => {
+  const withPoint = mapsLink({ latitude: 50.4501, longitude: 30.5234, label: 'Павільйон' });
+  // Шість знаків після коми — фіксований формат, щоб у посилання не потрапляв
+  // хвіст похибки обчислень на кшталт 49.83748576369466.
+  assert.ok(withPoint.includes('ll=50.450100,30.523400'), 'координати в посиланні');
+  assert.ok(withPoint.includes('maps.apple.com'), 'відкриваються нативні Карти');
+
+  const messy = mapsLink({ latitude: 49.83748576369466, longitude: 24.036566455078173, label: '' });
+  assert.ok(messy.includes('ll=49.837486,24.036566'), 'довгий хвіст обрізається');
+
+  const withoutPoint = mapsLink({ latitude: null, longitude: null, label: 'Київ, вул. Хрещатик 1' });
+  assert.ok(withoutPoint.includes('q=') && !withoutPoint.includes('ll='), 'лишається тільки пошук');
+
+  assert.equal(mapsLink({ latitude: null, longitude: null, label: '' }), null, 'нічого шукати — немає посилання');
+});
+
+test('проєкт: тип зйомки зберігається, зіпсовані координати відкидаються', () => {
+  const project = createProject({
+    title: 'Кліп', style: 'Музичний кліп',
+    latitude: 50.4501, longitude: 30.5234,
+  });
+  assert.equal(project.style, 'Музичний кліп');
+  assert.equal(project.latitude, 50.4501);
+
+  const broken = createProject({ title: 'Кліп', latitude: 999, longitude: 'схід' });
+  assert.equal(broken.latitude, null, 'широта поза межами стає null');
+  assert.equal(broken.longitude, null, 'текст замість довготи стає null');
 });
 
 test('валюта: знак стоїть там, де його очікують у кожній валюті', () => {

@@ -40,6 +40,29 @@ export function addDays(dateOnlyValue, days) {
   return toDateOnly(date);
 }
 
+/**
+ * Усі дати проміжку включно: '2026-08-12' … '2026-08-14' → три дати.
+ *
+ * Якщо кінець не вказано або він раніший за початок — повертає один день.
+ * Обмеження зверху захищає від друкарської помилки в році: інакше замість
+ * трьох знімальних днів у проєкт потрапили б тисячі.
+ */
+export function expandDateRange(from, to, maxDays = 90) {
+  const start = parseDateOnly(from);
+  if (!start) return [];
+
+  const end = parseDateOnly(to);
+  if (!end || end < start) return [toDateOnly(start)];
+
+  const days = [];
+  const cursor = new Date(start);
+  while (cursor <= end && days.length < maxDays) {
+    days.push(toDateOnly(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return days;
+}
+
 /** Скільки днів лишилось: 0 — сьогодні, відʼємне — прострочено. */
 export function daysUntil(dateOnlyValue, from = new Date()) {
   const target = parseDateOnly(dateOnlyValue);

@@ -71,6 +71,7 @@ export function taskRow(task, { project = null, onEdit = null } = {}) {
 
 export function projectCard(project, { taskCount = 0, openCount = 0 } = {}) {
   const meta = [chip(statusLabel(project.status), `status-${project.status}`)];
+  if (project.style) meta.push(chip(project.style, 'project'));
   if (project.deadline) meta.push(chip(`⚑ ${describeDue(project.deadline)}`, dueVariant(project.deadline)));
   if (project.shootDays.length) meta.push(chip(`🎥 ${project.shootDays.length}`));
   if (openCount) meta.push(chip(`✓ ${openCount} з ${taskCount}`));

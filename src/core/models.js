@@ -14,6 +14,25 @@ export const PROJECT_STATUSES = [
   { id: 'archived', label: 'Архів', hint: 'Прибрано з активних' },
 ];
 
+/**
+ * Тип зйомки. Список — це підказка, а не обмеження: поле зберігає звичайний
+ * рядок, тож будь-який свій варіант рівноправний із готовими.
+ */
+export const PROJECT_STYLES = [
+  'Однокамерна зйомка',
+  'Багатокамерна зйомка',
+  'Онлайн-трансляція',
+  'Музичний кліп',
+  'Реклама',
+  'Подкаст',
+  'Репортаж',
+  'Весілля',
+  'Документальне',
+  'Інтервʼю',
+  'Предметна зйомка',
+  'Аерозйомка',
+];
+
 export const PRIORITIES = [
   { id: 'high', label: 'Терміново', weight: 0 },
   { id: 'normal', label: 'Звичайно', weight: 1 },
@@ -45,12 +64,19 @@ export function createProject(input = {}) {
     id: newId('prj'),
     title: text(input.title) || 'Без назви',
     client: text(input.client),
+    // Тип зйомки: довільний рядок, підказки — у PROJECT_STYLES.
+    style: text(input.style),
     status: oneOf(input.status, PROJECT_STATUS_IDS, 'lead'),
     // Дата здачі матеріалу клієнту — саме вона рахується як дедлайн проєкту.
     deadline: dateOnly(input.deadline),
     // Знімальні дні: масив дат у форматі YYYY-MM-DD.
     shootDays: Array.isArray(input.shootDays) ? input.shootDays.map(dateOnly).filter(Boolean) : [],
     location: text(input.location),
+    // Координати локації, якщо місце позначили на карті. Живуть поруч із
+    // текстовою адресою, а не замість неї: на майданчику стають у пригоді
+    // обидва — і назва павільйону, і точка для навігації.
+    latitude: coordinate(input.latitude, 90),
+    longitude: coordinate(input.longitude, 180),
     fee: number(input.fee),
     paid: Boolean(input.paid),
     notes: text(input.notes),
@@ -139,6 +165,13 @@ function text(value) {
 function number(value) {
   const parsed = typeof value === 'number' ? value : Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** Координата в допустимих межах, інакше null — щоб зіпсована точка не «летіла» на карті. */
+function coordinate(value, limit) {
+  const parsed = number(value);
+  if (parsed === null || Math.abs(parsed) > limit) return null;
+  return parsed;
 }
 
 function oneOf(value, allowed, fallback) {

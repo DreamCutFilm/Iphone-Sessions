@@ -7,6 +7,7 @@ import { getState } from '../../core/store.js';
 import { projectById, tasksOfProject } from '../../core/selectors.js';
 import { PROJECT_STATUSES, ACTIVE_STATUSES, statusLabel } from '../../core/models.js';
 import { formatDate, describeDue, weekdayShort, daysUntil } from '../../core/dates.js';
+import { mapsLink, isValidCoordinate, formatCoordinates } from '../../core/geo.js';
 import { navigate } from '../router.js';
 
 export function projectsView() {
@@ -71,10 +72,27 @@ export function projectDetailView(projectId) {
   }));
 
   const facts = [chip(statusLabel(project.status), `status-${project.status}`)];
+  if (project.style) facts.push(chip(`🎬 ${project.style}`, 'project'));
   if (project.deadline) facts.push(chip(`⚑ Здача ${formatDate(project.deadline)} · ${describeDue(project.deadline)}`, dueVariant(project.deadline)));
   if (project.location) facts.push(chip(`📍 ${project.location}`));
   if (typeof project.fee === 'number') facts.push(chip(`${formatMoney(project.fee)} · ${project.paid ? 'оплачено' : 'не оплачено'}`, project.paid ? '' : 'money'));
   page.append(el('div.facts', facts));
+
+  // Посилання відкриває нативні «Карти» — з майданчика туди й треба доїхати.
+  const navigation = mapsLink({
+    latitude: project.latitude,
+    longitude: project.longitude,
+    label: project.location || project.title,
+  });
+  if (navigation) {
+    page.append(el(
+      'a.btn.btn--ghost.btn--wide.map-link',
+      { href: navigation, target: '_blank', rel: 'noopener' },
+      isValidCoordinate(project.latitude, project.longitude)
+        ? `🗺 Прокласти маршрут · ${formatCoordinates(project.latitude, project.longitude, 4)}`
+        : '🗺 Знайти локацію в Картах',
+    ));
+  }
 
   if (project.notes) {
     page.append(el('div.note-card', project.notes));
