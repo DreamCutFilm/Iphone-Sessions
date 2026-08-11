@@ -8,6 +8,7 @@ import {
 import { addItem, patchItem, removeItem, getState } from '../core/store.js';
 import { createProject, createTask, createIdea, PROJECT_STATUSES, PRIORITIES } from '../core/models.js';
 import { toLocalInputValue, fromLocalInputValue, formatDate, todayISO } from '../core/dates.js';
+import { currencySymbol } from '../core/locale.js';
 import { navigate } from './router.js';
 
 function projectOptions() {
@@ -163,7 +164,7 @@ export function editProject(existing = null) {
       placeholder: 'Місто, адреса, павільйон',
       oninput: (event) => { draft.location = event.target.value; },
     })),
-    field('Гонорар, ₴', numberInput({
+    field(`Гонорар, ${currencySymbol(getState().settings.currency)}`, numberInput({
       value: draft.fee ?? '',
       placeholder: '0',
       oninput: (event) => {

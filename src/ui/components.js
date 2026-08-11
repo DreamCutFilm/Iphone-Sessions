@@ -2,7 +2,8 @@
 
 import { el, haptic } from './dom.js';
 import { navigate } from './router.js';
-import { patchItem } from '../core/store.js';
+import { patchItem, getState } from '../core/store.js';
+import { formatMoney as formatMoneyIn } from '../core/locale.js';
 import { describeDue, daysUntil, formatDate, weekdayShort, formatDateTime } from '../core/dates.js';
 import { statusLabel } from '../core/models.js';
 
@@ -116,9 +117,9 @@ export function agendaDay(day) {
   );
 }
 
+/** Сума у валюті, обраній у налаштуваннях. */
 export function formatMoney(value) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return '';
-  return `${new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 0 }).format(value)} ₴`;
+  return formatMoneyIn(value, getState().settings.currency);
 }
 
 /** Плаваюча кнопка додавання в правому нижньому куті. */

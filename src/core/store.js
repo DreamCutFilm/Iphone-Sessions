@@ -6,12 +6,19 @@
 
 import { readJson, writeJson } from './storage.js';
 import { normalizeIdea, normalizeProject, normalizeTask } from './models.js';
+import { DEFAULT_CURRENCY, DEFAULT_LANGUAGE } from './locale.js';
 
 const STORAGE_KEY = 'dreamcut.ops.v1';
 const SAVE_DELAY_MS = 250;
 const SCHEMA_VERSION = 1;
 
 export const DEFAULT_SETTINGS = {
+  // Мова інтерфейсу. Вибір зберігається навіть для мов, переклад яких ще
+  // не готовий, — щоб не питати вдруге, коли тексти зʼявляться.
+  language: DEFAULT_LANGUAGE,
+  // Валюта гонорарів. Впливає лише на показ, суми не перераховуються.
+  currency: DEFAULT_CURRENCY,
+
   // Значення за замовчуванням для калькуляторів — щоб не вводити щоразу.
   sensorId: 's35',
   codecId: 'prores422hq-1080',

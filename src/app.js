@@ -3,7 +3,7 @@
 import { el, mount } from './ui/dom.js';
 import { route, setNotFound, startRouter, navigate, setNavigationListener, rerender } from './ui/router.js';
 import { subscribe, saveNow } from './core/store.js';
-import { isSheetOpen } from './ui/sheet.js';
+import { isSheetOpen, onSheetClosed } from './ui/sheet.js';
 import { startReminders } from './ui/reminders.js';
 
 import { overviewView } from './ui/views/overview.js';
@@ -72,9 +72,22 @@ setNavigationListener((path) => {
 });
 
 // Будь-яка зміна даних перемальовує поточний екран. Виняток — відкрита панель
-// редагування: перемальовування під час набору тексту вибило б фокус.
+// редагування: перемальовування під час набору тексту вибило б фокус. Тому
+// зміни, що сталися при відкритій панелі, відкладаються до її закриття —
+// інакше щойно збережений запис не з'являвся б у списку під панеллю.
+let pendingRerender = false;
+
 subscribe(() => {
-  if (isSheetOpen()) return;
+  if (isSheetOpen()) {
+    pendingRerender = true;
+    return;
+  }
+  rerender();
+});
+
+onSheetClosed(() => {
+  if (!pendingRerender) return;
+  pendingRerender = false;
   rerender();
 });
 

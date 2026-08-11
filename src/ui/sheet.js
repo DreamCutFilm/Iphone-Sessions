@@ -7,6 +7,16 @@ import { el, clear } from './dom.js';
 
 let activeSheet = null;
 
+// Слухачі закриття панелі. Потрібні, бо екран під панеллю не перемальовується,
+// поки вона відкрита (інакше введений текст втрачав би фокус), — і хтось має
+// дізнатися, що настав момент показати зміни.
+const closeListeners = new Set();
+
+export function onSheetClosed(listener) {
+  closeListeners.add(listener);
+  return () => closeListeners.delete(listener);
+}
+
 export function openSheet({ title, body, actions = [], onClose = null }) {
   closeSheet();
 
@@ -55,6 +65,14 @@ export function closeSheet() {
   document.body.classList.remove('is-locked');
   setTimeout(() => backdrop.remove(), 200);
   if (onClose) onClose();
+
+  for (const listener of closeListeners) {
+    try {
+      listener();
+    } catch (error) {
+      console.error('Помилка в слухачі закриття панелі:', error);
+    }
+  }
 }
 
 export function isSheetOpen() {

@@ -11,7 +11,7 @@
  * пристрій продовжить показувати стару версію з кешу.
  */
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const CACHE_NAME = `dreamcut-ops-v${VERSION}`;
 
 const ASSETS = [
@@ -27,6 +27,7 @@ const ASSETS = [
   'src/core/models.js',
   'src/core/store.js',
   'src/core/dates.js',
+  'src/core/locale.js',
   'src/core/selectors.js',
   'src/core/backup.js',
 

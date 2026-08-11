@@ -15,6 +15,7 @@ import { sunTimes, shootingWindows } from '../src/core/cine/sun.js';
 import { daysUntil, describeDue, parseDateOnly, toDateOnly, plural } from '../src/core/dates.js';
 import { taskOrder } from '../src/core/selectors.js';
 import { createTask, createProject } from '../src/core/models.js';
+import { formatMoney, currencySymbol, getCurrency, getLanguage, CURRENCIES, LANGUAGES } from '../src/core/locale.js';
 
 const near = (actual, expected, tolerance, message) => {
   assert.ok(
@@ -219,6 +220,56 @@ test('сортування задач: спершу з датою, потім з
   const urgent = createTask({ title: 'Терміново', priority: 'high' });
   const someday = createTask({ title: 'Колись', priority: 'low' });
   assert.ok(taskOrder(urgent, someday) < 0, 'термінова йде вище');
+});
+
+test('валюта: знак стоїть там, де його очікують у кожній валюті', () => {
+  assert.equal(formatMoney(48000, 'UAH'), '48 000 ₴');
+  assert.equal(formatMoney(48000, 'PLN'), '48 000 zł');
+  assert.equal(formatMoney(48000, 'USD'), '$48 000');
+  assert.equal(formatMoney(48000, 'EUR'), '€48 000');
+});
+
+test('валюта: копійки показуються лише коли вони є, і завжди двома знаками', () => {
+  assert.equal(formatMoney(1500, 'UAH'), '1 500 ₴');
+  // Половина гривні — це «50 копійок», а не «5»: для грошей дробова частина
+  // завжди двозначна, інакше суму читають неправильно.
+  assert.equal(formatMoney(1500.5, 'UAH'), '1 500,50 ₴');
+  assert.equal(formatMoney(1500.25, 'UAH'), '1 500,25 ₴');
+  assert.equal(formatMoney(0, 'UAH'), '0 ₴');
+});
+
+test('валюта: розряди відокремлені звичайним пробілом, а не нерозривним', () => {
+  const formatted = formatMoney(1234567, 'UAH');
+  assert.ok(!/[  ]/.test(formatted), 'нерозривних пробілів бути не має');
+  assert.equal(formatted, '1 234 567 ₴');
+});
+
+test('валюта: невідомий код не ламає показ, а відкочується на гривню', () => {
+  assert.equal(formatMoney(100, 'BTC'), '100 ₴');
+  assert.equal(getCurrency('вигадка').code, 'UAH');
+  assert.equal(currencySymbol('PLN'), 'zł');
+});
+
+test('валюта: нечислове значення дає порожній рядок, а не «NaN ₴»', () => {
+  assert.equal(formatMoney(null, 'UAH'), '');
+  assert.equal(formatMoney(undefined, 'UAH'), '');
+  assert.equal(formatMoney(Number.NaN, 'UAH'), '');
+});
+
+test('валюти: усі чотири на місці й мають знак', () => {
+  assert.deepEqual(CURRENCIES.map((currency) => currency.code), ['UAH', 'PLN', 'USD', 'EUR']);
+  for (const currency of CURRENCIES) {
+    assert.ok(currency.symbol.length > 0, `${currency.code} без знаку`);
+    assert.ok(['prefix', 'suffix'].includes(currency.position), `${currency.code} без позиції знаку`);
+  }
+});
+
+test('мови: українська готова, польська поки позначена як неготова', () => {
+  assert.equal(getLanguage('uk').ready, true);
+  assert.equal(getLanguage('pl').ready, false);
+  // Невідома мова не має ламати застосунок.
+  assert.equal(getLanguage('вигадка').id, 'uk');
+  assert.deepEqual(LANGUAGES.map((language) => language.id), ['uk', 'pl']);
 });
 
 test('моделі: сміттєві дані не ламають створення запису', () => {
