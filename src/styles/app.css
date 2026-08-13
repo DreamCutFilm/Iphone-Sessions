@@ -588,6 +588,48 @@ select.input {
 }
 
 .map-link { display: block; text-align: center; text-decoration: none; margin-bottom: 4px; }
+
+/* --- Кошториси ----------------------------------------------------------- */
+
+/* Суми в рядках вирівнюються по правому краю моноширинними цифрами —
+   так стовпчик читається згори вниз, а не «стрибає». */
+.item-amount {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  align-self: center;
+}
+
+.item-grid { display: flex; gap: 10px; }
+.item-grid .field { flex: 1; min-width: 0; }
+
+.item-total {
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Текст кошторису рівно в тому вигляді, в якому його отримає клієнт. */
+.client-preview {
+  margin: 0;
+  padding: 14px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #d5d8dd;
+  white-space: pre-wrap;
+  overflow-x: auto;
+  max-height: 50vh;
+}
 .day-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .day-chip {
   display: inline-flex; align-items: center; gap: 6px;

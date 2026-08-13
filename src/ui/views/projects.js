@@ -3,6 +3,11 @@
 import { el, emptyState } from '../dom.js';
 import { pageHeader, sectionTitle, projectCard, taskRow, chip, fab, dueVariant, formatMoney } from '../components.js';
 import { editProject, editTask } from '../editors.js';
+import { editEstimate } from '../estimate-forms.js';
+import { estimateTotals, estimateStatusLabel } from '../../core/estimates.js';
+// Кошторис показуємо у ВЛАСНІЙ валюті, зафіксованій у ньому, а не в поточній
+// із налаштувань — тому тут потрібна саме версія з явним аргументом.
+import { formatMoney as formatMoneyIn } from '../../core/locale.js';
 import { getState } from '../../core/store.js';
 import { projectById, tasksOfProject } from '../../core/selectors.js';
 import { PROJECT_STATUSES, ACTIVE_STATUSES, statusLabel } from '../../core/models.js';
@@ -126,6 +131,27 @@ export function projectDetailView(projectId) {
     page.append(sectionTitle('Виконано', el('span.section-hint', String(doneTasks.length))));
     page.append(el('div.list.list--muted', doneTasks.slice(0, 10).map((task) => taskRow(task, { onEdit: (item) => editTask(item) }))));
   }
+
+  const estimates = state.estimates.filter((estimate) => estimate.projectId === project.id);
+  page.append(sectionTitle(
+    'Кошториси',
+    el('button.link', { type: 'button', onclick: () => editEstimate(null, { projectId: project.id, title: project.title }) }, '+ додати'),
+  ));
+  page.append(estimates.length
+    ? el('div.list', estimates.map((estimate) => {
+        const totals = estimateTotals(estimate);
+        return el(
+          'article.row',
+          { onclick: () => navigate(`/estimates/${estimate.id}`) },
+          el('div.row-body',
+            el('p.row-title', estimate.title),
+            el('div.row-meta',
+              chip(estimateStatusLabel(estimate.status)),
+              chip(`${totals.itemCount} позицій`))),
+          el('span.item-amount', formatMoneyIn(totals.total, estimate.currency)),
+        );
+      }))
+    : emptyState('Кошторису ще немає', 'Склади — позиції беруться з каталогу техніки.'));
 
   if (ideas.length) {
     page.append(sectionTitle('Ідеї', el('button.link', { type: 'button', onclick: () => navigate('/ideas') }, 'усі')));

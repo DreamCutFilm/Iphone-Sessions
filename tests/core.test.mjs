@@ -20,6 +20,11 @@ import {
 import { taskOrder } from '../src/core/selectors.js';
 import { createTask, createProject } from '../src/core/models.js';
 import { formatMoney, currencySymbol, getCurrency, getLanguage, CURRENCIES, LANGUAGES } from '../src/core/locale.js';
+import { createEquipment, unitMargin } from '../src/core/equipment.js';
+import {
+  createEstimate, createItem, itemAmount, estimateTotals,
+  totalsByCategory, clientView, itemFromEquipment, estimateToText, describeItemCount,
+} from '../src/core/estimates.js';
 
 const near = (actual, expected, tolerance, message) => {
   assert.ok(
@@ -404,6 +409,170 @@ test('мови: українська готова, польська поки п�
   // Невідома мова не має ламати застосунок.
   assert.equal(getLanguage('вигадка').id, 'uk');
   assert.deepEqual(LANGUAGES.map((language) => language.id), ['uk', 'pl']);
+});
+
+// --- Кошториси ------------------------------------------------------------
+
+/** Типовий кошторис знімального дня: дві камери на дві зміни плюс оператор. */
+function sampleEstimate(overrides = {}) {
+  return createEstimate({
+    title: 'Рекламний ролик',
+    currency: 'UAH',
+    items: [
+      // 2 камери × 2 зміни × 3000, собівартість 1000 (орендую в рентала)
+      createItem({ title: 'Sony FX6', category: 'equipment', quantity: 2, shifts: 2, unitPrice: 3000, unitCost: 1000 }),
+      // 1 оператор × 2 зміни × 8000, собівартість 0 (це я)
+      createItem({ title: 'Оператор', category: 'crew', quantity: 1, shifts: 2, unitPrice: 8000, unitCost: 0 }),
+    ],
+    ...overrides,
+  });
+}
+
+test('кошторис: сума позиції — кількість × зміни × ціна', () => {
+  const item = createItem({ quantity: 2, shifts: 3, unitPrice: 1500 });
+  assert.equal(itemAmount(item), 9000);
+});
+
+test('кошторис: підсумок складається з позицій', () => {
+  const totals = estimateTotals(sampleEstimate());
+  // 2×2×3000 = 12 000, плюс 1×2×8000 = 16 000
+  assert.equal(totals.subtotal, 28000);
+  assert.equal(totals.total, 28000, 'без знижки й податку підсумок дорівнює сумі');
+});
+
+test('кошторис: собівартість і маржа рахуються окремо від ціни', () => {
+  const totals = estimateTotals(sampleEstimate());
+  assert.equal(totals.cost, 4000, 'оренда камер: 2×2×1000');
+  assert.equal(totals.margin, 24000);
+  assert.equal(totals.marginPercent, 85.71);
+});
+
+test('кошторис: знижка зменшує суму до нарахування податку', () => {
+  const totals = estimateTotals(sampleEstimate({ discountPercent: 10 }));
+  assert.equal(totals.discount, 2800);
+  assert.equal(totals.afterDiscount, 25200);
+  assert.equal(totals.total, 25200);
+});
+
+test('кошторис: податок нараховується на суму після знижки', () => {
+  const totals = estimateTotals(sampleEstimate({ discountPercent: 10, taxPercent: 23 }));
+  assert.equal(totals.afterDiscount, 25200);
+  assert.equal(totals.tax, 5796, '23 % від 25 200');
+  assert.equal(totals.total, 30996);
+});
+
+test('кошторис: податок не потрапляє в маржу', () => {
+  // ПДВ — не твої гроші, ти лише передаєш їх далі. Якби він рахувався
+  // в маржу, прибуток на папері виглядав би більшим, ніж є насправді.
+  const withoutTax = estimateTotals(sampleEstimate());
+  const withTax = estimateTotals(sampleEstimate({ taxPercent: 23 }));
+  assert.equal(withTax.margin, withoutTax.margin);
+  assert.ok(withTax.total > withoutTax.total, 'а на підсумок податок впливає');
+});
+
+test('кошторис: знижка маржу зменшує — вона йде з твоєї кишені', () => {
+  const plain = estimateTotals(sampleEstimate());
+  const discounted = estimateTotals(sampleEstimate({ discountPercent: 20 }));
+  assert.ok(discounted.margin < plain.margin);
+  assert.equal(discounted.margin, 18400, '22 400 після знижки мінус 4 000 собівартості');
+});
+
+test('кошторис: безглузді відсотки не ламають підсумок', () => {
+  assert.equal(estimateTotals(sampleEstimate({ discountPercent: 300 })).discount, 28000, 'більше 100 % не буває');
+  assert.equal(estimateTotals(sampleEstimate({ discountPercent: -50 })).discount, 0, 'відʼємної знижки не буває');
+});
+
+test('кошторис: порожній кошторис дає нулі, а не помилку', () => {
+  const totals = estimateTotals(createEstimate({ title: 'Порожній' }));
+  assert.equal(totals.subtotal, 0);
+  assert.equal(totals.total, 0);
+  assert.equal(totals.marginPercent, 0, 'ділення на нуль не відбувається');
+});
+
+test('кошторис: суми округлюються до копійок і сходяться з рядками', () => {
+  const estimate = createEstimate({
+    items: [
+      createItem({ title: 'А', quantity: 3, shifts: 1, unitPrice: 33.33 }),
+      createItem({ title: 'Б', quantity: 1, shifts: 1, unitPrice: 0.01 }),
+    ],
+  });
+  const totals = estimateTotals(estimate);
+  assert.equal(totals.subtotal, 100, '99.99 + 0.01');
+});
+
+test('кошторис: позиції групуються за розділами в потрібному порядку', () => {
+  const groups = totalsByCategory(sampleEstimate());
+  assert.deepEqual(groups.map((group) => group.label), ['Техніка', 'Команда']);
+  assert.equal(groups[0].amount, 12000);
+  assert.equal(groups[1].amount, 16000);
+});
+
+test('клієнтський вигляд не містить жодного сліду собівартості', () => {
+  const view = clientView(sampleEstimate({ notes: 'Домовився з ренталом за пів ціни' }));
+  const serialized = JSON.stringify(view);
+
+  assert.ok(!serialized.includes('unitCost'), 'собівартості немає');
+  assert.ok(!serialized.includes('margin'), 'маржі немає');
+  assert.ok(!serialized.includes('1000'), 'ціни рентала немає навіть числом');
+  assert.ok(!serialized.includes('Домовився'), 'внутрішня нотатка не витікає');
+
+  assert.equal(view.total, 28000, 'а підсумок для клієнта на місці');
+  assert.equal(view.groups.length, 2);
+});
+
+test('кількість позиції відмінюється правильно й без зайвого «1 ×»', () => {
+  const one = createItem({ quantity: 1, shifts: 1, unit: 'зміна' });
+  assert.equal(describeItemCount(one), '1 зміна', 'рядок «1 × 1 зміна» читався б як помилка');
+
+  assert.equal(describeItemCount(createItem({ quantity: 1, shifts: 3, unit: 'зміна' })), '3 зміни');
+  assert.equal(describeItemCount(createItem({ quantity: 1, shifts: 5, unit: 'зміна' })), '5 змін');
+  assert.equal(describeItemCount(createItem({ quantity: 2, shifts: 2, unit: 'зміна' })), '2 × 2 зміни');
+  assert.equal(describeItemCount(createItem({ quantity: 1, shifts: 11, unit: 'день' })), '11 днів');
+  assert.equal(describeItemCount(createItem({ quantity: 1, shifts: 21, unit: 'день' })), '21 день');
+  assert.equal(describeItemCount(createItem({ quantity: 1, shifts: 2, unit: 'година' })), '2 години');
+});
+
+test('кількість штучних позицій не плутається зі змінами', () => {
+  // Для «шт» час не має сенсу: рахується кількість, а не тривалість.
+  assert.equal(describeItemCount(createItem({ quantity: 3, shifts: 1, unit: 'шт' })), '3 шт');
+  assert.equal(describeItemCount(createItem({ quantity: 120, shifts: 1, unit: 'км' })), '120 км');
+  assert.equal(describeItemCount(createItem({ quantity: 2, shifts: 1, unit: 'послуга' })), '2 послуги');
+});
+
+test('текст для клієнта містить підсумок і не містить собівартості', () => {
+  const text = estimateToText(
+    sampleEstimate({ clientNotes: 'Ціна включає трансфер по місту.', discountPercent: 10 }),
+    formatMoney,
+  );
+
+  assert.ok(text.includes('РЕКЛАМНИЙ РОЛИК'), 'назва вгорі');
+  assert.ok(text.includes('Техніка') && text.includes('Команда'), 'розділи на місці');
+  assert.ok(text.includes('Sony FX6: 2 × 2 зміни'), 'кількість і зміни видно');
+  assert.ok(text.includes('Знижка: −2 800 ₴'), 'знижка показана');
+  assert.ok(text.includes('РАЗОМ: 25 200 ₴'), 'підсумок правильний');
+  assert.ok(text.includes('трансфер'), 'нотатка для клієнта на місці');
+  assert.ok(!text.includes('1 000'), 'ціна рентала в текст не потрапляє');
+});
+
+test('позиція з каталогу техніки бере обидві ціни', () => {
+  const camera = createEquipment({ title: 'Sony FX6', category: 'camera', dayRate: 3000, dayCost: 1000 });
+  const item = itemFromEquipment(camera, { quantity: 2, shifts: 3 });
+
+  assert.equal(item.title, 'Sony FX6');
+  assert.equal(item.unitPrice, 3000);
+  assert.equal(item.unitCost, 1000, 'собівартість переноситься теж');
+  assert.equal(item.equipmentId, camera.id, 'звʼязок із каталогом зберігається');
+  assert.equal(itemAmount(item), 18000);
+});
+
+test('техніка: відʼємні ціни відкидаються, маржа рахується', () => {
+  const item = createEquipment({ title: 'Слайдер', dayRate: 800, dayCost: 300 });
+  assert.equal(unitMargin(item), 500);
+
+  const broken = createEquipment({ title: 'Дрон', dayRate: -100, dayCost: 'дорого' });
+  assert.equal(broken.dayRate, null);
+  assert.equal(broken.dayCost, null);
+  assert.equal(unitMargin(broken), 0, 'без цін маржа нульова, а не NaN');
 });
 
 test('моделі: сміттєві дані не ламають створення запису', () => {

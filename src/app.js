@@ -11,12 +11,16 @@ import { projectsView, projectDetailView } from './ui/views/projects.js';
 import { tasksView } from './ui/views/tasks.js';
 import { ideasView } from './ui/views/ideas.js';
 import { calcMenuView, calcToolView } from './ui/views/calc.js';
+import { estimatesView, estimateDetailView } from './ui/views/estimates.js';
+import { equipmentView } from './ui/views/equipment.js';
 import { settingsView } from './ui/views/settings.js';
 
 const TABS = [
   { path: '/overview', label: 'Огляд', mark: '◎' },
   { path: '/projects', label: 'Проєкти', mark: '▣' },
   { path: '/tasks', label: 'Задачі', mark: '✓' },
+  // Знак суми, а не валюти: валюта в застосунку змінна, значок вкладки — ні.
+  { path: '/estimates', label: 'Кошторис', mark: '∑' },
   { path: '/ideas', label: 'Ідеї', mark: '✳' },
   { path: '/calc', label: 'Кіно', mark: 'ƒ' },
 ];
@@ -39,6 +43,9 @@ route('/projects', () => render(projectsView));
 route('/projects/:id', ({ id }) => render(() => projectDetailView(id)));
 route('/tasks', () => render(tasksView));
 route('/ideas', () => render(ideasView));
+route('/estimates', () => render(estimatesView));
+route('/estimates/:id', ({ id }) => render(() => estimateDetailView(id)));
+route('/equipment', () => render(equipmentView));
 route('/calc', () => render(calcMenuView));
 route('/calc/:tool', ({ tool }) => render(() => calcToolView(tool)));
 route('/settings', () => render(settingsView));
