@@ -108,10 +108,37 @@ startRouter();
 startReminders();
 
 // Service worker дає офлайн-режим. На file:// він недоступний — це нормально.
+//
+// Окрема морока — оновлення. Застосунок навмисно показує вміст із кешу, тому
+// нова версія інакше зʼявлялася б аж на другий-третій запуск, і виглядало б
+// це так, ніби оновлення не приїхало. Тому: питаємо про оновлення при кожному
+// відкритті, а коли нова версія перебирає керування — перезавантажуємось самі.
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => {
+  // Чи керував сторінкою якийсь worker на момент запуску. Якщо ні — це перша
+  // установка, і перезавантажуватись немає сенсу: свіжішого вмісту не буде.
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let reloading = false;
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return;
+    reloading = true;
+    window.location.reload();
+  });
+
+  window.addEventListener('load', async () => {
+    try {
+      const registration = await navigator.serviceWorker.register('sw.js');
+
+      const checkForUpdate = () => registration.update().catch(() => {});
+      checkForUpdate();
+
+      // Повернення до застосунку — найчастіший момент, коли є мережа
+      // і варто спитати, чи не вийшла нова версія.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') checkForUpdate();
+      });
+    } catch {
       // Офлайн-режим просто не увімкнеться; сам застосунок працює далі.
-    });
+    }
   });
 }
