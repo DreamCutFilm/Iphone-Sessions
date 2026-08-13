@@ -3,10 +3,16 @@
 import { el, emptyState } from '../dom.js';
 import { pageHeader, sectionTitle, projectCard, taskRow, chip, fab, dueVariant, formatMoney } from '../components.js';
 import { editProject, editTask } from '../editors.js';
+import { editEstimate } from '../estimate-forms.js';
+import { estimateTotals, estimateStatusLabel } from '../../core/estimates.js';
+// Кошторис показуємо у ВЛАСНІЙ валюті, зафіксованій у ньому, а не в поточній
+// із налаштувань — тому тут потрібна саме версія з явним аргументом.
+import { formatMoney as formatMoneyIn } from '../../core/locale.js';
 import { getState } from '../../core/store.js';
 import { projectById, tasksOfProject } from '../../core/selectors.js';
 import { PROJECT_STATUSES, ACTIVE_STATUSES, statusLabel } from '../../core/models.js';
 import { formatDate, describeDue, weekdayShort, daysUntil } from '../../core/dates.js';
+import { mapsLink, isValidCoordinate, formatCoordinates } from '../../core/geo.js';
 import { navigate } from '../router.js';
 
 export function projectsView() {
@@ -71,10 +77,27 @@ export function projectDetailView(projectId) {
   }));
 
   const facts = [chip(statusLabel(project.status), `status-${project.status}`)];
+  if (project.style) facts.push(chip(`🎬 ${project.style}`, 'project'));
   if (project.deadline) facts.push(chip(`⚑ Здача ${formatDate(project.deadline)} · ${describeDue(project.deadline)}`, dueVariant(project.deadline)));
   if (project.location) facts.push(chip(`📍 ${project.location}`));
   if (typeof project.fee === 'number') facts.push(chip(`${formatMoney(project.fee)} · ${project.paid ? 'оплачено' : 'не оплачено'}`, project.paid ? '' : 'money'));
   page.append(el('div.facts', facts));
+
+  // Посилання відкриває нативні «Карти» — з майданчика туди й треба доїхати.
+  const navigation = mapsLink({
+    latitude: project.latitude,
+    longitude: project.longitude,
+    label: project.location || project.title,
+  });
+  if (navigation) {
+    page.append(el(
+      'a.btn.btn--ghost.btn--wide.map-link',
+      { href: navigation, target: '_blank', rel: 'noopener' },
+      isValidCoordinate(project.latitude, project.longitude)
+        ? `🗺 Прокласти маршрут · ${formatCoordinates(project.latitude, project.longitude, 4)}`
+        : '🗺 Знайти локацію в Картах',
+    ));
+  }
 
   if (project.notes) {
     page.append(el('div.note-card', project.notes));
@@ -108,6 +131,27 @@ export function projectDetailView(projectId) {
     page.append(sectionTitle('Виконано', el('span.section-hint', String(doneTasks.length))));
     page.append(el('div.list.list--muted', doneTasks.slice(0, 10).map((task) => taskRow(task, { onEdit: (item) => editTask(item) }))));
   }
+
+  const estimates = state.estimates.filter((estimate) => estimate.projectId === project.id);
+  page.append(sectionTitle(
+    'Кошториси',
+    el('button.link', { type: 'button', onclick: () => editEstimate(null, { projectId: project.id, title: project.title }) }, '+ додати'),
+  ));
+  page.append(estimates.length
+    ? el('div.list', estimates.map((estimate) => {
+        const totals = estimateTotals(estimate);
+        return el(
+          'article.row',
+          { onclick: () => navigate(`/estimates/${estimate.id}`) },
+          el('div.row-body',
+            el('p.row-title', estimate.title),
+            el('div.row-meta',
+              chip(estimateStatusLabel(estimate.status)),
+              chip(`${totals.itemCount} позицій`))),
+          el('span.item-amount', formatMoneyIn(totals.total, estimate.currency)),
+        );
+      }))
+    : emptyState('Кошторису ще немає', 'Склади — позиції беруться з каталогу техніки.'));
 
   if (ideas.length) {
     page.append(sectionTitle('Ідеї', el('button.link', { type: 'button', onclick: () => navigate('/ideas') }, 'усі')));

@@ -2,7 +2,8 @@
 
 import { el, haptic } from './dom.js';
 import { navigate } from './router.js';
-import { patchItem } from '../core/store.js';
+import { patchItem, getState } from '../core/store.js';
+import { formatMoney as formatMoneyIn } from '../core/locale.js';
 import { describeDue, daysUntil, formatDate, weekdayShort, formatDateTime } from '../core/dates.js';
 import { statusLabel } from '../core/models.js';
 
@@ -70,6 +71,7 @@ export function taskRow(task, { project = null, onEdit = null } = {}) {
 
 export function projectCard(project, { taskCount = 0, openCount = 0 } = {}) {
   const meta = [chip(statusLabel(project.status), `status-${project.status}`)];
+  if (project.style) meta.push(chip(project.style, 'project'));
   if (project.deadline) meta.push(chip(`⚑ ${describeDue(project.deadline)}`, dueVariant(project.deadline)));
   if (project.shootDays.length) meta.push(chip(`🎥 ${project.shootDays.length}`));
   if (openCount) meta.push(chip(`✓ ${openCount} з ${taskCount}`));
@@ -116,9 +118,9 @@ export function agendaDay(day) {
   );
 }
 
+/** Сума у валюті, обраній у налаштуваннях. */
 export function formatMoney(value) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return '';
-  return `${new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 0 }).format(value)} ₴`;
+  return formatMoneyIn(value, getState().settings.currency);
 }
 
 /** Плаваюча кнопка додавання в правому нижньому куті. */

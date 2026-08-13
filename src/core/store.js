@@ -6,12 +6,21 @@
 
 import { readJson, writeJson } from './storage.js';
 import { normalizeIdea, normalizeProject, normalizeTask } from './models.js';
+import { normalizeEquipment } from './equipment.js';
+import { normalizeEstimate } from './estimates.js';
+import { DEFAULT_CURRENCY, DEFAULT_LANGUAGE } from './locale.js';
 
 const STORAGE_KEY = 'dreamcut.ops.v1';
 const SAVE_DELAY_MS = 250;
 const SCHEMA_VERSION = 1;
 
 export const DEFAULT_SETTINGS = {
+  // Мова інтерфейсу. Вибір зберігається навіть для мов, переклад яких ще
+  // не готовий, — щоб не питати вдруге, коли тексти зʼявляться.
+  language: DEFAULT_LANGUAGE,
+  // Валюта гонорарів. Впливає лише на показ, суми не перераховуються.
+  currency: DEFAULT_CURRENCY,
+
   // Значення за замовчуванням для калькуляторів — щоб не вводити щоразу.
   sensorId: 's35',
   codecId: 'prores422hq-1080',
@@ -28,6 +37,8 @@ function emptyState() {
     projects: [],
     tasks: [],
     ideas: [],
+    equipment: [],
+    estimates: [],
     settings: { ...DEFAULT_SETTINGS },
   };
 }
@@ -41,6 +52,10 @@ function loadState() {
     projects: toList(raw.projects, normalizeProject),
     tasks: toList(raw.tasks, normalizeTask),
     ideas: toList(raw.ideas, normalizeIdea),
+    // Колекції, яких не було в ранніх версіях, просто зʼявляються порожніми —
+    // старе сховище через це не ламається.
+    equipment: toList(raw.equipment, normalizeEquipment),
+    estimates: toList(raw.estimates, normalizeEstimate),
     settings: { ...DEFAULT_SETTINGS, ...(raw.settings ?? {}) },
   };
 }
@@ -73,6 +88,8 @@ export function update(mutator) {
     projects: [...state.projects],
     tasks: [...state.tasks],
     ideas: [...state.ideas],
+    equipment: [...state.equipment],
+    estimates: [...state.estimates],
     settings: { ...state.settings },
   };
   const result = mutator(draft);
@@ -89,6 +106,8 @@ export function replaceState(next) {
     projects: toList(next.projects, normalizeProject),
     tasks: toList(next.tasks, normalizeTask),
     ideas: toList(next.ideas, normalizeIdea),
+    equipment: toList(next.equipment, normalizeEquipment),
+    estimates: toList(next.estimates, normalizeEstimate),
     settings: { ...DEFAULT_SETTINGS, ...(next.settings ?? {}) },
   };
   saveNow();
@@ -121,7 +140,13 @@ export function saveNow() {
 
 // --- Операції над колекціями ---------------------------------------------
 
-const COLLECTIONS = { projects: 'projects', tasks: 'tasks', ideas: 'ideas' };
+const COLLECTIONS = {
+  projects: 'projects',
+  tasks: 'tasks',
+  ideas: 'ideas',
+  equipment: 'equipment',
+  estimates: 'estimates',
+};
 
 export function addItem(collection, item) {
   assertCollection(collection);
@@ -144,10 +169,22 @@ export function removeItem(collection, id) {
   assertCollection(collection);
   update((draft) => {
     draft[collection] = draft[collection].filter((item) => item.id !== id);
-    // Задачі та ідеї не повинні посилатися на видалений проєкт.
+    // Записи не повинні посилатися на видалений проєкт.
     if (collection === 'projects') {
       draft.tasks = draft.tasks.map((task) => (task.projectId === id ? { ...task, projectId: null } : task));
       draft.ideas = draft.ideas.map((idea) => (idea.projectId === id ? { ...idea, projectId: null } : idea));
+      draft.estimates = draft.estimates.map((estimate) =>
+        estimate.projectId === id ? { ...estimate, projectId: null } : estimate);
+    }
+
+    // Позиції кошторисів памʼятають, з якої техніки їх додали. Саму позицію
+    // зберігаємо — ціна вже зафіксована й переписувати кошторис заднім числом
+    // не можна, — але посилання на видалений запис прибираємо.
+    if (collection === 'equipment') {
+      draft.estimates = draft.estimates.map((estimate) => ({
+        ...estimate,
+        items: estimate.items.map((item) => (item.equipmentId === id ? { ...item, equipmentId: null } : item)),
+      }));
     }
   });
 }

@@ -513,6 +513,123 @@ select.input {
 .segmented-item.is-active { background: var(--accent); color: #1a1204; font-weight: 600; }
 
 .day-picker { display: flex; flex-direction: column; gap: 10px; }
+.day-range { display: flex; gap: 10px; }
+.day-range-item { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+
+.style-field, .location-field { display: flex; flex-direction: column; gap: 10px; }
+.location-point { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* --- Карта --------------------------------------------------------------- */
+
+.map-picker { display: flex; flex-direction: column; gap: 12px; }
+
+.map-frame { position: relative; border-radius: var(--radius); overflow: hidden; }
+
+.map-viewport {
+  position: relative;
+  height: 260px;
+  background: var(--surface-2);
+  overflow: hidden;
+  cursor: grab;
+  /* Без цього перетягування карти прокручує сторінку під нею */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.map-viewport.is-dragging { cursor: grabbing; }
+
+.map-tiles { position: absolute; inset: 0; }
+.map-tile {
+  position: absolute;
+  width: 256px; height: 256px;
+  pointer-events: none;
+  /* Плитки OSM світлі — трохи приглушуємо, щоб не сліпило в темряві */
+  filter: brightness(0.82) saturate(0.9);
+}
+
+.map-crosshair {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 26px;
+  color: var(--accent);
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+
+.map-zoom {
+  position: absolute;
+  right: 10px; top: 10px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.map-zoom-btn {
+  width: 38px; height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(13, 14, 17, 0.9);
+  color: var(--text);
+  font-size: 20px; line-height: 1;
+  cursor: pointer;
+}
+
+.map-readout {
+  margin: 0; text-align: center;
+  font-size: 17px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.map-scale, .map-hint, .map-credit { margin: 0; text-align: center; font-size: 12px; color: var(--muted); }
+.map-credit { opacity: 0.7; }
+.map-offline {
+  margin: 0; padding: 10px 12px;
+  background: rgba(255, 196, 77, 0.12);
+  border-radius: var(--radius-sm);
+  font-size: 13px; color: var(--warn); line-height: 1.4;
+}
+
+.map-link { display: block; text-align: center; text-decoration: none; margin-bottom: 4px; }
+
+/* --- Кошториси ----------------------------------------------------------- */
+
+/* Суми в рядках вирівнюються по правому краю моноширинними цифрами —
+   так стовпчик читається згори вниз, а не «стрибає». */
+.item-amount {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  align-self: center;
+}
+
+.item-grid { display: flex; gap: 10px; }
+.item-grid .field { flex: 1; min-width: 0; }
+
+.item-total {
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Текст кошторису рівно в тому вигляді, в якому його отримає клієнт. */
+.client-preview {
+  margin: 0;
+  padding: 14px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #d5d8dd;
+  white-space: pre-wrap;
+  overflow-x: auto;
+  max-height: 50vh;
+}
 .day-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .day-chip {
   display: inline-flex; align-items: center; gap: 6px;

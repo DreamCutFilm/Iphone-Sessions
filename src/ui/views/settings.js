@@ -9,6 +9,7 @@ import { storageName } from '../../core/storage.js';
 import { SENSORS } from '../../core/cine/sensors.js';
 import { CODECS } from '../../core/cine/media.js';
 import { COMMON_FPS } from '../../core/cine/exposure.js';
+import { LANGUAGES, CURRENCIES, getLanguage, getCurrency, formatMoney } from '../../core/locale.js';
 import { notificationState, requestNotifications } from '../reminders.js';
 import { APP_VERSION } from '../../app-meta.js';
 
@@ -17,6 +18,9 @@ export function settingsView() {
   const page = el('div.page');
 
   page.append(pageHeader('Налаштування', { back: '/overview' }));
+
+  page.append(sectionTitle('Мова та валюта'));
+  page.append(localeBlock(state));
 
   page.append(sectionTitle('За замовчуванням'));
   page.append(el(
@@ -89,6 +93,50 @@ export function settingsView() {
   ));
 
   return page;
+}
+
+function localeBlock(state) {
+  const language = getLanguage(state.settings.language);
+
+  const block = el(
+    'div.form',
+    field('Мова інтерфейсу', selectInput(
+      LANGUAGES.map((item) => ({
+        value: item.id,
+        label: item.ready ? item.native : `${item.native} — скоро`,
+      })),
+      {
+        value: state.settings.language,
+        onchange: (event) => {
+          const chosen = getLanguage(event.target.value);
+          patchSettings({ language: chosen.id });
+          toast(chosen.ready
+            ? `Мова: ${chosen.native}`
+            : `${chosen.native} ще в роботі — інтерфейс поки українською`);
+        },
+      },
+    ), language.ready
+      ? null
+      : 'Переклад готується. Вибір збережено — інтерфейс перемкнеться сам, щойно тексти зʼявляться.'),
+
+    field('Валюта', selectInput(
+      CURRENCIES.map((currency) => ({
+        value: currency.code,
+        label: `${currency.label} (${currency.symbol})`,
+      })),
+      {
+        value: state.settings.currency,
+        onchange: (event) => {
+          patchSettings({ currency: event.target.value });
+          toast(`Валюта: ${getCurrency(event.target.value).label}`);
+        },
+      },
+    ), 'Змінює лише підпис сум. Уже введені гонорари не перераховуються за курсом — щоб історія проєктів не спотворювалась.'),
+
+    el('p.settings-note', `Приклад: ${formatMoney(48000, state.settings.currency)}`),
+  );
+
+  return block;
 }
 
 function notificationBlock() {

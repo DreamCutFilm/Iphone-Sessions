@@ -3,7 +3,7 @@
 import { el, mount } from './ui/dom.js';
 import { route, setNotFound, startRouter, navigate, setNavigationListener, rerender } from './ui/router.js';
 import { subscribe, saveNow } from './core/store.js';
-import { isSheetOpen } from './ui/sheet.js';
+import { isSheetOpen, onSheetClosed } from './ui/sheet.js';
 import { startReminders } from './ui/reminders.js';
 
 import { overviewView } from './ui/views/overview.js';
@@ -11,12 +11,16 @@ import { projectsView, projectDetailView } from './ui/views/projects.js';
 import { tasksView } from './ui/views/tasks.js';
 import { ideasView } from './ui/views/ideas.js';
 import { calcMenuView, calcToolView } from './ui/views/calc.js';
+import { estimatesView, estimateDetailView } from './ui/views/estimates.js';
+import { equipmentView } from './ui/views/equipment.js';
 import { settingsView } from './ui/views/settings.js';
 
 const TABS = [
   { path: '/overview', label: 'Огляд', mark: '◎' },
   { path: '/projects', label: 'Проєкти', mark: '▣' },
   { path: '/tasks', label: 'Задачі', mark: '✓' },
+  // Знак суми, а не валюти: валюта в застосунку змінна, значок вкладки — ні.
+  { path: '/estimates', label: 'Кошторис', mark: '∑' },
   { path: '/ideas', label: 'Ідеї', mark: '✳' },
   { path: '/calc', label: 'Кіно', mark: 'ƒ' },
 ];
@@ -39,6 +43,9 @@ route('/projects', () => render(projectsView));
 route('/projects/:id', ({ id }) => render(() => projectDetailView(id)));
 route('/tasks', () => render(tasksView));
 route('/ideas', () => render(ideasView));
+route('/estimates', () => render(estimatesView));
+route('/estimates/:id', ({ id }) => render(() => estimateDetailView(id)));
+route('/equipment', () => render(equipmentView));
 route('/calc', () => render(calcMenuView));
 route('/calc/:tool', ({ tool }) => render(() => calcToolView(tool)));
 route('/settings', () => render(settingsView));
@@ -72,9 +79,22 @@ setNavigationListener((path) => {
 });
 
 // Будь-яка зміна даних перемальовує поточний екран. Виняток — відкрита панель
-// редагування: перемальовування під час набору тексту вибило б фокус.
+// редагування: перемальовування під час набору тексту вибило б фокус. Тому
+// зміни, що сталися при відкритій панелі, відкладаються до її закриття —
+// інакше щойно збережений запис не з'являвся б у списку під панеллю.
+let pendingRerender = false;
+
 subscribe(() => {
-  if (isSheetOpen()) return;
+  if (isSheetOpen()) {
+    pendingRerender = true;
+    return;
+  }
+  rerender();
+});
+
+onSheetClosed(() => {
+  if (!pendingRerender) return;
+  pendingRerender = false;
   rerender();
 });
 
