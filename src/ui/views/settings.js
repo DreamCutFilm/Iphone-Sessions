@@ -91,6 +91,7 @@ export function settingsView() {
     el('p.about-line', `Сховище: ${storageName()}`),
     el('p.about-line', 'Працює офлайн. Розрахунки виконуються на пристрої.'),
   ));
+  page.append(el('div.form', updateButton()));
 
   return page;
 }
@@ -172,6 +173,50 @@ function notificationBlock() {
       },
     }, 'Дозволити сповіщення'),
   );
+}
+
+/**
+ * Ручна перевірка оновлення.
+ *
+ * Застосунок показує вміст із кешу, тож нова версія сама собою зʼявляється
+ * лише з наступного запуску. Ця кнопка робить те саме одразу й на очах:
+ * питає сервер, забирає нову версію й перезавантажується.
+ */
+function updateButton() {
+  if (!('serviceWorker' in navigator) || !location.protocol.startsWith('http')) {
+    return el('p.settings-note', 'Оновлення керується сервером застосунку. Тут воно недоступне.');
+  }
+
+  return el('button.btn.btn--ghost.btn--wide', {
+    type: 'button',
+    onclick: async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      button.textContent = 'Перевіряю…';
+
+      try {
+        const registration = await navigator.serviceWorker.getRegistration();
+        if (!registration) throw new Error('немає реєстрації');
+
+        await registration.update();
+
+        // Нова версія стає активною одразу — і сторінку треба перечитати,
+        // інакше на екрані лишиться стара.
+        if (registration.waiting || registration.installing) {
+          toast('Нова версія знайдена — перезапускаю');
+          setTimeout(() => window.location.reload(), 900);
+          return;
+        }
+
+        toast(`У тебе найновіша версія — ${APP_VERSION}`);
+      } catch {
+        toast('Не вдалося перевірити. Потрібен інтернет.', { error: true });
+      } finally {
+        button.disabled = false;
+        button.textContent = '⟳ Перевірити оновлення';
+      }
+    },
+  }, '⟳ Перевірити оновлення');
 }
 
 function exportBackup() {
