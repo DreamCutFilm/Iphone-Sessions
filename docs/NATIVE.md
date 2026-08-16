@@ -38,7 +38,7 @@ Xcode-проєкт. Веб-код лишається той самий, звер
 
 ```bash
 npm install @capacitor/core @capacitor/cli
-npx cap init "DreamCut Ops" com.dreamcut.ops --web-dir=.
+npx cap init "DreamCut App" com.dreamcut.ops --web-dir=.
 npx cap add ios
 npx cap open ios          # відкриється Xcode
 ```
@@ -93,7 +93,7 @@ struct WebView: UIViewRepresentable {
 }
 
 @main
-struct DreamCutOpsApp: App {
+struct DreamCutApp: App {
     var body: some Scene {
         WindowGroup { WebView().ignoresSafeArea() }
     }
@@ -127,8 +127,8 @@ struct DreamCutOpsApp: App {
 
 ## Що зробити перед публікацією в App Store
 
-1. **Іконки.** `tools/make-icons.py` генерує PNG потрібних розмірів. Для
-   App Store потрібен ще 1024×1024 — додай рядок у `TARGETS`.
+1. **Іконки.** `tools/make-icons.py` генерує PNG потрібних розмірів,
+   включно з 1024×1024 для App Store.
 2. **Політика приватності.** Формально потрібна навіть тут. Текст простий і
    чесний: застосунок не збирає жодних даних, усе лишається на пристрої,
    мережа не використовується.

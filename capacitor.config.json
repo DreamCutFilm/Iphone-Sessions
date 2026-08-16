@@ -1,6 +1,6 @@
 {
   "appId": "com.dreamcut.ops",
-  "appName": "DreamCut Ops",
+  "appName": "DreamCut App",
   "webDir": ".",
   "ios": {
     "contentInset": "never",

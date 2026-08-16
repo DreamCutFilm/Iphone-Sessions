@@ -3,7 +3,7 @@
 import { el, toast } from '../dom.js';
 import { pageHeader, sectionTitle } from '../components.js';
 import { field, selectInput, numberInput, textInput, confirmSheet } from '../sheet.js';
-import { getState, patchSettings, replaceState } from '../../core/store.js';
+import { getState, patchSettings, replaceState, damagedData, forgetDamagedData } from '../../core/store.js';
 import { buildBackup, backupFileName, restoreBackup, mergeBackup } from '../../core/backup.js';
 import { storageName } from '../../core/storage.js';
 import { SENSORS } from '../../core/cine/sensors.js';
@@ -60,6 +60,12 @@ export function settingsView() {
   page.append(sectionTitle('Нагадування'));
   page.append(notificationBlock());
 
+  const damaged = damagedData();
+  if (damaged) {
+    page.append(sectionTitle('Увага'));
+    page.append(damagedBlock(damaged));
+  }
+
   page.append(sectionTitle('Дані'));
   page.append(el(
     'div.form',
@@ -86,7 +92,7 @@ export function settingsView() {
   page.append(sectionTitle('Про застосунок'));
   page.append(el(
     'div.about',
-    el('p.about-name', 'DreamCut Ops'),
+    el('p.about-name', 'DreamCut App'),
     el('p.about-line', `Версія ${APP_VERSION}`),
     el('p.about-line', `Сховище: ${storageName()}`),
     el('p.about-line', 'Працює офлайн. Розрахунки виконуються на пристрої.'),
@@ -176,6 +182,42 @@ function notificationBlock() {
 }
 
 /**
+ * Попередження про пошкоджену базу.
+ *
+ * Застосунок стартував порожнім не тому, що даних не було, а тому, що їх не
+ * вдалося прочитати. Копію відкладено вбік — звідси її можна витягнути файлом
+ * і врятувати записи вручну.
+ */
+function damagedBlock(raw) {
+  return el(
+    'div.form',
+    el('p.settings-note',
+      '⚠ Попередню базу не вдалося прочитати, тому застосунок відкрився порожнім. ' +
+      'Пошкоджені дані збережено окремо — завантаж їх файлом, звідти можна витягнути записи. ' +
+      'Не стирай цю копію, доки не переконаєшся, що все на місці.'),
+    el('button.btn.btn--primary.btn--wide', {
+      type: 'button',
+      onclick: () => {
+        downloadText(raw, `dreamcut-app-пошкоджена-${new Date().toISOString().slice(0, 10)}.json`);
+        toast('Файл збережено');
+      },
+    }, '⇩ Завантажити пошкоджену базу'),
+    el('button.btn.btn--ghost.btn--wide', {
+      type: 'button',
+      onclick: () => confirmSheet({
+        title: 'Прибрати попередження?',
+        message: 'Пошкоджену копію буде стерто остаточно. Спершу переконайся, що ти її завантажив.',
+        confirmLabel: 'Стерти копію',
+        onConfirm: () => {
+          forgetDamagedData();
+          toast('Копію прибрано');
+        },
+      }),
+    }, 'Прибрати попередження'),
+  );
+}
+
+/**
  * Ручна перевірка оновлення.
  *
  * Застосунок показує вміст із кешу, тож нова версія сама собою зʼявляється
@@ -220,18 +262,20 @@ function updateButton() {
 }
 
 function exportBackup() {
-  const data = JSON.stringify(buildBackup(), null, 2);
-  const blob = new Blob([data], { type: 'application/json' });
+  downloadText(JSON.stringify(buildBackup(), null, 2), backupFileName());
+  toast('Копію збережено у «Файли»');
+}
+
+function downloadText(text, fileName) {
+  const blob = new Blob([text], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
 
-  const link = el('a', { href: url, download: backupFileName() });
+  const link = el('a', { href: url, download: fileName });
   document.body.append(link);
   link.click();
   link.remove();
   // Звільняємо памʼять, але не одразу: Safari встигає підхопити файл.
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-
-  toast('Копію збережено у «Файли»');
 }
 
 function importBackup({ merge }) {
