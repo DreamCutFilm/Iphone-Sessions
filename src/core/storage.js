@@ -55,13 +55,49 @@ export function storageName() {
   return adapter.name;
 }
 
+/** Куди відкладаємо дані, які не вдалося прочитати. */
+const QUARANTINE_SUFFIX = '.broken';
+
 export function readJson(key, fallback = null) {
+  let raw;
   try {
-    const raw = adapter.read(key);
-    if (raw === null || raw === undefined) return fallback;
-    return JSON.parse(raw);
+    raw = adapter.read(key);
   } catch {
     return fallback;
+  }
+
+  if (raw === null || raw === undefined) return fallback;
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    // Дані є, але прочитати їх не вдалося — обірваний запис, вичерпана квота.
+    // Застосунок стартує порожнім і за мить запише порожнечу поверх: це єдиний
+    // примірник, іншого немає. Тому спершу відкладаємо копію вбік — з неї
+    // потім можна витягнути записи вручну.
+    try {
+      adapter.write(`${key}${QUARANTINE_SUFFIX}`, raw);
+    } catch {
+      // Якщо навіть це не вдалося — вдіяти вже нічого, дані втрачено.
+    }
+    return fallback;
+  }
+}
+
+/** Чи лежить у сховищі відкладена пошкоджена база. */
+export function readQuarantined(key) {
+  try {
+    return adapter.read(`${key}${QUARANTINE_SUFFIX}`) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearQuarantined(key) {
+  try {
+    adapter.remove(`${key}${QUARANTINE_SUFFIX}`);
+  } catch {
+    // Нічого страшного: запис просто лишиться лежати.
   }
 }
 

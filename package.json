@@ -1,5 +1,5 @@
 {
-  "name": "dreamcut-ops",
+  "name": "dreamcut-app",
   "version": "1.0.0",
   "description": "Робочий інструмент оператора: проєкти, дедлайни, задачі, ідеї та кінорозрахунки. PWA, працює офлайн.",
   "type": "module",

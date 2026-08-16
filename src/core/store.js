@@ -4,12 +4,16 @@
 // не смикав сховище на кожну літеру) і сповіщає підписників про зміни.
 // Модуль не знає про DOM — його можна запустити в нативній оболонці чи в тестах.
 
-import { readJson, writeJson } from './storage.js';
+import { readJson, writeJson, readQuarantined, clearQuarantined } from './storage.js';
 import { normalizeIdea, normalizeProject, normalizeTask } from './models.js';
 import { normalizeEquipment } from './equipment.js';
 import { normalizeEstimate } from './estimates.js';
 import { DEFAULT_CURRENCY, DEFAULT_LANGUAGE } from './locale.js';
 
+// Ключ сховища навмисно лишається старим після перейменування застосунку:
+// саме за ним лежать усі дані на телефонах, і зміна означала б, що
+// застосунок відкриється порожнім, а проєкти й кошториси стануть
+// недосяжними. Користувач цього рядка не бачить.
 const STORAGE_KEY = 'dreamcut.ops.v1';
 const SAVE_DELAY_MS = 250;
 const SCHEMA_VERSION = 1;
@@ -192,6 +196,18 @@ export function removeItem(collection, id) {
 export function findItem(collection, id) {
   assertCollection(collection);
   return state[collection].find((item) => item.id === id) ?? null;
+}
+
+/**
+ * Пошкоджена база, відкладена при запуску, — щоб інтерфейс міг попередити
+ * і дати завантажити її файлом замість того, щоб мовчки її поховати.
+ */
+export function damagedData() {
+  return readQuarantined(STORAGE_KEY);
+}
+
+export function forgetDamagedData() {
+  clearQuarantined(STORAGE_KEY);
 }
 
 export function patchSettings(changes) {

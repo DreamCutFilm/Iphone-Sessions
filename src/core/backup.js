@@ -8,6 +8,9 @@
 import { getState, replaceState } from './store.js';
 import { toDateOnly } from './dates.js';
 
+// Позначка формату навмисно лишається старою, попри перейменування застосунку:
+// вона записана всередині вже зроблених резервних копій, і зміна зробила б
+// їх нечитабельними. Це службовий ідентифікатор, користувач його не бачить.
 export const BACKUP_FORMAT = 'dreamcut-ops-backup';
 export const BACKUP_VERSION = 1;
 
@@ -27,7 +30,7 @@ export function buildBackup() {
 }
 
 export function backupFileName() {
-  return `dreamcut-ops-${toDateOnly(new Date())}.json`;
+  return `dreamcut-app-${toDateOnly(new Date())}.json`;
 }
 
 /**
@@ -45,7 +48,7 @@ export function parseBackup(rawText) {
     throw new Error('Файл порожній або пошкоджений.');
   }
   if (parsed.format !== BACKUP_FORMAT) {
-    throw new Error('Це не резервна копія DreamCut Ops.');
+    throw new Error('Це не резервна копія DreamCut App.');
   }
   if (typeof parsed.version === 'number' && parsed.version > BACKUP_VERSION) {
     throw new Error('Копію зроблено новішою версією застосунку. Онови застосунок.');

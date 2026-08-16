@@ -58,7 +58,7 @@ function check() {
 }
 
 function show(task) {
-  const body = task.notes || 'Нагадування з DreamCut Ops';
+  const body = task.notes || 'Нагадування з DreamCut App';
 
   if (notificationState() === 'granted') {
     try {
