@@ -63,12 +63,13 @@ export async function myCompanies() {
     .map((row) => ({ ...row.companies, role: row.role, title: row.title }));
 }
 
-export async function createCompany({ name, slug, city, about }) {
+export async function createCompany({ name, slug, city, about, listed = true }) {
   return rpc('create_company', {
     p_name: name,
     p_slug: slug,
     p_city: city || null,
     p_about: about || null,
+    p_listed: listed,
   });
 }
 

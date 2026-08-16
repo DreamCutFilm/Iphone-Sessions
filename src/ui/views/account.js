@@ -15,7 +15,7 @@ import {
   isSignedIn, currentUser, signIn, signUp, signOut, resetPassword, CloudError,
 } from '../../core/cloud.js';
 import {
-  myCompanies, createCompany, searchCompanies, requestJoin, myRequests,
+  myCompanies, createCompany, updateCompany, searchCompanies, requestJoin, myRequests,
   teamOf, pendingRequests, approveRequest, declineRequest, changeRole, removeMember,
   createInvite, activeInvites, revokeInvite, redeemInvite,
   makeSlug, isValidSlug, roleLabel, canManage, ROLES,
@@ -218,6 +218,20 @@ function companyBlock(company, host) {
     company.city ? chip(`📍 ${company.city}`) : null,
     company.listed ? chip('у каталозі', 'money') : chip('прихована')));
 
+  if (canManage(company.role)) {
+    block.append(el('div.form',
+      el('button.btn.btn--ghost.btn--wide', {
+        type: 'button',
+        onclick: async () => {
+          const next = !company.listed;
+          const saved = await run(() => updateCompany(company.id, { listed: next }));
+          if (!saved) return;
+          toast(next ? 'Фірма зʼявиться в пошуку' : 'Фірму прибрано з каталогу');
+          loadCompanies(host);
+        },
+      }, company.listed ? 'Прибрати з каталогу' : 'Показувати в каталозі')));
+  }
+
   const teamHost = el('div');
   block.append(teamHost);
   loadTeam(teamHost, company, host);
@@ -370,7 +384,7 @@ function memberSheet(member, company, teamHost, rootHost) {
 }
 
 function createCompanySheet(host) {
-  const draft = { name: '', slug: '', city: '', about: '' };
+  const draft = { name: '', slug: '', city: '', about: '', listed: true };
   const error = el('p.settings-note');
 
   const slugInput = textInput({
@@ -403,6 +417,12 @@ function createCompanySheet(host) {
         placeholder: 'Що знімаєте, чим вирізняєтесь',
         oninput: (event) => { draft.about = event.target.value; },
       })),
+      field('У каталозі', segmented(
+        [{ value: 'yes', label: 'Показувати' }, { value: 'no', label: 'Приховати' }],
+        'yes',
+        (value) => { draft.listed = value === 'yes'; },
+      ), 'Показану фірму знаходять у пошуку й надсилають заявки. Прихована ' +
+         'працює так само, але тільки за кодом запрошення.'),
       error,
     ),
     actions: [

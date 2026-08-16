@@ -125,6 +125,38 @@ create table if not exists public.invites (
 );
 
 -- ---------------------------------------------------------------------------
+-- 5а. Звʼязок із профілями
+-- ---------------------------------------------------------------------------
+-- Спочатку `user_id` вказував напряму на auth.users. Формально правильно —
+-- але тоді запит «дай команду разом з іменами» не працює: сервер даних не
+-- бачить дороги від членства до профілю й відмовляє. Дорога має бути явною,
+-- тож переставляємо звʼязок на profiles. Це безпечно: рядок профілю створює
+-- тригер у ту ж мить, що й самого користувача, а видалення користувача
+-- по ланцюжку зносить і профіль, і членства.
+--
+-- Спершу знімаємо старий звʼязок, потім ставимо новий — так цей блок можна
+-- виконувати повторно.
+
+alter table public.memberships drop constraint if exists memberships_user_id_fkey;
+alter table public.memberships
+  add constraint memberships_user_id_fkey
+  foreign key (user_id) references public.profiles (id) on delete cascade;
+
+alter table public.join_requests drop constraint if exists join_requests_user_id_fkey;
+alter table public.join_requests
+  add constraint join_requests_user_id_fkey
+  foreign key (user_id) references public.profiles (id) on delete cascade;
+
+-- Хто фірму завів — це запис в історію, а не влада над нею. Влада — у ролі
+-- «директор» у таблиці членства. Тому видалення людини не має впиратися
+-- у фірму: людина йде, фірма лишається, поле просто порожніє.
+alter table public.companies alter column created_by drop not null;
+alter table public.companies drop constraint if exists companies_created_by_fkey;
+alter table public.companies
+  add constraint companies_created_by_fkey
+  foreign key (created_by) references auth.users (id) on delete set null;
+
+-- ---------------------------------------------------------------------------
 -- 6. Допоміжні функції
 -- ---------------------------------------------------------------------------
 -- Вони позначені security definer навмисно. Правило доступу до memberships,
@@ -167,6 +199,40 @@ as $$
   select public.member_role(cid) in ('owner', 'admin');
 $$;
 
+-- Кого мені видно на імʼя.
+--
+-- Двоє: свої по фірмі — і ті, хто постукав до фірми, якою я керую. Друге
+-- обовʼязкове: заявка без імені й телефону — це «хтось хоче до вас», і
+-- прийняти таке рішення неможливо.
+--
+-- Функція знову security definer, і з тієї ж причини, що вище: правило для
+-- профілів, яке саме читає таблиці з правилами, заганяє базу в глухий кут.
+create or replace function public.can_see_profile(pid uuid)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select
+    pid = auth.uid()
+    or exists (
+      select 1
+      from public.memberships mine
+      join public.memberships theirs on theirs.company_id = mine.company_id
+      where mine.user_id = auth.uid() and theirs.user_id = pid
+    )
+    or exists (
+      select 1
+      from public.join_requests request
+      join public.memberships mine on mine.company_id = request.company_id
+      where request.user_id = pid
+        and request.status = 'pending'
+        and mine.user_id = auth.uid()
+        and mine.role in ('owner', 'admin')
+    );
+$$;
+
 -- ---------------------------------------------------------------------------
 -- 7. Права доступу
 -- ---------------------------------------------------------------------------
@@ -177,18 +243,11 @@ alter table public.memberships   enable row level security;
 alter table public.join_requests enable row level security;
 alter table public.invites       enable row level security;
 
--- Профілі: свій завжди; чужий — лише якщо ви в одній фірмі.
+-- Профілі: свій завжди; чужий — своя команда і ті, хто подав заявку до фірми,
+-- якою я керую. Решта людей у базі для мене не існує.
 drop policy if exists profiles_select on public.profiles;
 create policy profiles_select on public.profiles for select
-  using (
-    id = auth.uid()
-    or exists (
-      select 1
-      from public.memberships mine
-      join public.memberships theirs on theirs.company_id = mine.company_id
-      where mine.user_id = auth.uid() and theirs.user_id = profiles.id
-    )
-  );
+  using (public.can_see_profile(id));
 
 drop policy if exists profiles_update on public.profiles;
 create policy profiles_update on public.profiles for update
@@ -281,7 +340,8 @@ create or replace function public.create_company(
   p_name text,
   p_slug text,
   p_city text default null,
-  p_about text default null
+  p_about text default null,
+  p_listed boolean default true
 )
 returns public.companies
 language plpgsql
@@ -295,8 +355,9 @@ begin
     raise exception 'Потрібно ввійти';
   end if;
 
-  insert into public.companies (name, slug, city, about, created_by)
-  values (trim(p_name), lower(trim(p_slug)), nullif(trim(p_city), ''), nullif(trim(p_about), ''), auth.uid())
+  insert into public.companies (name, slug, city, about, listed, created_by)
+  values (trim(p_name), lower(trim(p_slug)), nullif(trim(p_city), ''), nullif(trim(p_about), ''),
+          coalesce(p_listed, true), auth.uid())
   returning * into new_company;
 
   insert into public.memberships (company_id, user_id, role)
@@ -378,6 +439,10 @@ $$;
 
 -- Пошук фірми за назвою для того, хто ще не в команді.
 -- Показує лише те, що й так публічне: назву, місто, коротке імʼя.
+--
+-- Прихована фірма не знаходиться. Це не дрібниця: якщо вимикач «показувати
+-- в каталозі» не впливає на пошук, він бреше — а фірма, яка навмисно
+-- сховалась, однаково отримує заявки від незнайомих людей.
 create or replace function public.search_companies(p_query text)
 returns table (id uuid, name text, slug text, city text, about text, listed boolean)
 language sql
@@ -387,13 +452,16 @@ set search_path = public
 as $$
   select c.id, c.name, c.slug, c.city, c.about, c.listed
   from public.companies c
-  where length(trim(coalesce(p_query, ''))) >= 2
+  where c.listed
+    and length(trim(coalesce(p_query, ''))) >= 2
     and (c.name ilike '%' || trim(p_query) || '%' or c.slug ilike '%' || trim(p_query) || '%')
-  order by c.listed desc, c.name
+  order by c.name
   limit 20;
 $$;
 
-grant execute on function public.create_company(text, text, text, text) to authenticated;
+drop function if exists public.create_company(text, text, text, text);
+
+grant execute on function public.create_company(text, text, text, text, boolean) to authenticated;
 grant execute on function public.redeem_invite(text) to authenticated;
 grant execute on function public.approve_join_request(uuid, text) to authenticated;
 grant execute on function public.search_companies(text) to authenticated;
