@@ -10,9 +10,10 @@ import {
   createEquipment, EQUIPMENT_CATEGORIES, EQUIPMENT_PRESETS, OWNERSHIP, categoryLabel,
 } from '../core/equipment.js';
 import {
-  createEstimate, createItem, itemFromEquipment, itemAmount,
+  createEstimate, createItem, itemFromEquipment, itemFromCrew, itemAmount,
   ESTIMATE_STATUSES, ITEM_CATEGORIES, UNITS,
 } from '../core/estimates.js';
+import { createCrew, CREW_ROLES, crewLabel, clientRate } from '../core/crew.js';
 import { formatMoney, currencySymbol, CURRENCIES } from '../core/locale.js';
 import { navigate } from './router.js';
 
@@ -97,6 +98,81 @@ export function editEquipment(existing = null, defaults = {}) {
           else addItem('equipment', { ...draft, title: draft.title.trim() });
           closeSheet();
           toast(existing ? 'Збережено' : 'Додано в каталог');
+        },
+      }, 'Зберегти'),
+    ],
+  });
+}
+
+// --- Команда --------------------------------------------------------------
+
+export function editCrew(existing = null, defaults = {}) {
+  const member = existing ?? createCrew(defaults);
+  const draft = { ...member };
+  const symbol = currencySymbol(getState().settings.currency);
+
+  const roleInput = textInput({
+    value: draft.role,
+    placeholder: 'Оператор камери',
+    oninput: (event) => { draft.role = event.target.value; },
+  });
+
+  const body = formBody(
+    field('Роль', roleInput),
+    el('div.quick-picks', CREW_ROLES.map((role) => el('button.quick-pick', {
+      type: 'button',
+      onclick: () => { draft.role = role; roleInput.value = role; },
+    }, role))),
+    field('Імʼя', textInput({
+      value: draft.name,
+      placeholder: 'Хто саме',
+      oninput: (event) => { draft.name = event.target.value; },
+    }), 'Можна лишити порожнім — тоді це просто роль, яку ще треба закрити.'),
+    field(`Гонорар за зміну, ${symbol}`, numberInput({
+      value: draft.fee ?? '',
+      placeholder: '0',
+      oninput: (event) => { draft.fee = parseMoney(event.target.value); },
+    }), 'Скільки ти платиш цій людині.'),
+    field(`Ставка клієнту за зміну, ${symbol}`, numberInput({
+      value: draft.rate ?? '',
+      placeholder: 'стільки ж, скільки гонорар',
+      oninput: (event) => { draft.rate = parseMoney(event.target.value); },
+    }), 'Порожньо — виставляєш клієнту рівно гонорар, без націнки.'),
+    field('Телефон', textInput({
+      value: draft.phone,
+      type: 'tel',
+      placeholder: '+380…',
+      oninput: (event) => { draft.phone = event.target.value; },
+    })),
+    field('Нотатка', textInput({
+      value: draft.notes,
+      placeholder: 'Своя камера, працює з дроном…',
+      oninput: (event) => { draft.notes = event.target.value; },
+    })),
+  );
+
+  openSheet({
+    title: existing ? 'Людина в команді' : 'Додати людину',
+    body,
+    actions: [
+      existing
+        ? el('button.btn.btn--ghost', {
+            type: 'button',
+            onclick: () => confirmSheet({
+              title: 'Прибрати з команди?',
+              message: `«${crewLabel(member)}» зникне з каталогу. Гонорари у вже складених кошторисах залишаться — суми там зафіксовані.`,
+              onConfirm: () => { removeItem('crew', member.id); toast('Прибрано з команди'); },
+            }),
+          }, 'Видалити')
+        : el('button.btn.btn--ghost', { type: 'button', onclick: () => closeSheet() }, 'Скасувати'),
+      el('button.btn.btn--primary', {
+        type: 'button',
+        onclick: () => {
+          if (!draft.role.trim()) { toast('Вкажи роль', { error: true }); return; }
+          if (existing) patchItem('crew', member.id, draft);
+          else addItem('crew', { ...draft, role: draft.role.trim() });
+          closeSheet();
+          toast(existing ? 'Збережено' : 'Додано в команду');
         },
       }, 'Зберегти'),
     ],
@@ -246,11 +322,22 @@ export function editEstimateItem(estimate, existingItem = null) {
       placeholder: '0',
       oninput: (event) => { draft.unitPrice = parseMoney(event.target.value) ?? 0; refreshTotal(); },
     })),
-    field(`Собівартість, ${symbol}`, numberInput({
+    field(`${draft.category === 'crew' ? 'Гонорар людині' : 'Собівартість'}, ${symbol}`, numberInput({
       value: draft.unitCost || '',
       placeholder: '0',
       oninput: (event) => { draft.unitCost = parseMoney(event.target.value) ?? 0; },
-    }), 'Клієнт цього не бачить.'),
+    }), 'Скільки платиш ти. Клієнт цього не бачить.'),
+    el('label.switch',
+      el('input', {
+        type: 'checkbox',
+        checked: draft.internalOnly,
+        onchange: (event) => { draft.internalOnly = event.target.checked; },
+      }),
+      el('span', 'Тільки для мене'),
+    ),
+    el('p.field-hint',
+      'Позиція не потрапить у рахунок клієнту, але витрата на неї рахуватиметься. ' +
+      'Зручно, коли людину найняв, а окремим рядком клієнту не показуєш.'),
     total,
   );
 
@@ -292,40 +379,77 @@ export function editEstimateItem(estimate, existingItem = null) {
  * Тап одразу додає позицію — на майданчику важлива швидкість, а кількість
  * і зміни легко поправити потім, торкнувшись рядка в кошторисі.
  */
-export function openItemPicker(estimate) {
-  const catalog = getState().equipment.filter((item) => !item.archived);
+export function openItemPicker(estimate, { source = 'equipment' } = {}) {
+  const state = getState();
+  const equipment = state.equipment.filter((item) => !item.archived);
+  const crew = state.crew.filter((item) => !item.archived);
+
   const listHost = el('div.list');
   let query = '';
+  let active = source;
+
+  const addToEstimate = (item, label) => {
+    patchItem('estimates', estimate.id, { items: [...estimate.items, item] });
+    closeSheet();
+    toast(`Додано: ${label}`);
+  };
 
   const render = () => {
     const needle = query.trim().toLowerCase();
-    const matched = catalog.filter((item) => !needle || item.title.toLowerCase().includes(needle));
-
     listHost.replaceChildren();
 
-    if (!catalog.length) {
+    if (active === 'crew') {
+      if (!crew.length) {
+        listHost.append(el('p.settings-note',
+          'У команді ще нікого немає. Додай людей із їхніми гонорарами — і найматимеш їх у кошторис одним тапом.'));
+        return;
+      }
+
+      const matched = crew.filter((member) => !needle || crewLabel(member).toLowerCase().includes(needle));
+      if (!matched.length) {
+        listHost.append(el('p.settings-note', 'Нікого не знайшлось.'));
+        return;
+      }
+
+      for (const member of matched) {
+        const rate = clientRate(member);
+        listHost.append(el(
+          'article.row',
+          {
+            onclick: () => addToEstimate(
+              itemFromCrew(member, { label: crewLabel(member), clientRate: rate }),
+              crewLabel(member),
+            ),
+          },
+          el('div.row-body',
+            el('p.row-title', crewLabel(member)),
+            el('p.row-note',
+              `гонорар ${formatMoney(member.fee ?? 0, estimate.currency)}` +
+              (rate !== (member.fee ?? 0) ? ` · клієнту ${formatMoney(rate, estimate.currency)}` : ''))),
+          el('span.card-chevron', '+'),
+        ));
+      }
+      return;
+    }
+
+    if (!equipment.length) {
       listHost.append(el('p.settings-note', 'Каталог порожній. Додай техніку — і вона зʼявлятиметься тут разом із цінами.'));
       return;
     }
+
+    const matched = equipment.filter((item) => !needle || item.title.toLowerCase().includes(needle));
     if (!matched.length) {
       listHost.append(el('p.settings-note', 'Нічого не знайшлось.'));
       return;
     }
 
-    for (const equipment of matched) {
+    for (const item of matched) {
       listHost.append(el(
         'article.row',
-        {
-          onclick: () => {
-            const item = itemFromEquipment(equipment);
-            patchItem('estimates', estimate.id, { items: [...estimate.items, item] });
-            closeSheet();
-            toast(`Додано: ${equipment.title}`);
-          },
-        },
+        { onclick: () => addToEstimate(itemFromEquipment(item), item.title) },
         el('div.row-body',
-          el('p.row-title', equipment.title),
-          el('p.row-note', `${categoryLabel(equipment.category)} · ${formatMoney(equipment.dayRate ?? 0, estimate.currency)} за зміну`)),
+          el('p.row-title', item.title),
+          el('p.row-note', `${categoryLabel(item.category)} · ${formatMoney(item.dayRate ?? 0, estimate.currency)} за зміну`)),
         el('span.card-chevron', '+'),
       ));
     }
@@ -333,12 +457,17 @@ export function openItemPicker(estimate) {
   render();
 
   openSheet({
-    title: 'Додати з каталогу',
+    title: 'Додати в кошторис',
     body: el(
       'div.form',
+      segmented(
+        [{ value: 'equipment', label: '🎒 Техніка' }, { value: 'crew', label: '👤 Команда' }],
+        active,
+        (value) => { active = value; render(); },
+      ),
       el('div.search-bar', el('input.input.input--search', {
         type: 'search',
-        placeholder: 'Пошук по каталогу',
+        placeholder: 'Пошук',
         oninput: (event) => { query = event.target.value; render(); },
       })),
       listHost,

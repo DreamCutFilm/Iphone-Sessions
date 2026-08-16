@@ -9,7 +9,7 @@ import { estimateTotals, estimateStatusLabel } from '../../core/estimates.js';
 // із налаштувань — тому тут потрібна саме версія з явним аргументом.
 import { formatMoney as formatMoneyIn } from '../../core/locale.js';
 import { getState } from '../../core/store.js';
-import { projectById, tasksOfProject } from '../../core/selectors.js';
+import { projectById, tasksOfProject, projectPayouts } from '../../core/selectors.js';
 import { PROJECT_STATUSES, ACTIVE_STATUSES, statusLabel } from '../../core/models.js';
 import { formatDate, describeDue, weekdayShort, daysUntil } from '../../core/dates.js';
 import { mapsLink, isValidCoordinate, formatCoordinates } from '../../core/geo.js';
@@ -152,6 +152,29 @@ export function projectDetailView(projectId) {
         );
       }))
     : emptyState('Кошторису ще немає', 'Склади — позиції беруться з каталогу техніки.'));
+
+  // Гонорари — окремою графою одразу під кошторисами. Це не другий список,
+  // а зведення тих самих позицій: скільки ти маєш виплатити людям.
+  const payouts = projectPayouts(state, project.id);
+  if (payouts.people.length) {
+    page.append(sectionTitle(
+      'Гонорари',
+      el('span.section-hint', formatMoneyIn(payouts.total, payouts.currency)),
+    ));
+    page.append(el('div.list', payouts.people.map((person) => el(
+      'article.row',
+      person.crewId ? { onclick: () => navigate('/crew') } : null,
+      el('span.row-mark', '👤'),
+      el('div.row-body',
+        el('p.row-title', person.title),
+        el('p.row-note', person.lines.length > 1
+          ? `${person.lines.length} позиції в кошторисах`
+          : person.lines[0].entry.count)),
+      el('span.item-amount', formatMoneyIn(person.payout, person.currency)),
+    ))));
+    page.append(el('p.settings-note',
+      'Це те, що ти виплачуєш команді. Суми беруться з кошторисів проєкту, тож розійтися з ними не можуть.'));
+  }
 
   if (ideas.length) {
     page.append(sectionTitle('Ідеї', el('button.link', { type: 'button', onclick: () => navigate('/ideas') }, 'усі')));

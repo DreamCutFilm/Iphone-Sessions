@@ -8,6 +8,7 @@ import { readJson, writeJson, readQuarantined, clearQuarantined } from './storag
 import { normalizeIdea, normalizeProject, normalizeTask } from './models.js';
 import { normalizeEquipment } from './equipment.js';
 import { normalizeEstimate } from './estimates.js';
+import { normalizeCrew } from './crew.js';
 import { DEFAULT_CURRENCY, DEFAULT_LANGUAGE } from './locale.js';
 
 // Ключ сховища навмисно лишається старим після перейменування застосунку:
@@ -42,6 +43,7 @@ function emptyState() {
     tasks: [],
     ideas: [],
     equipment: [],
+    crew: [],
     estimates: [],
     settings: { ...DEFAULT_SETTINGS },
   };
@@ -59,6 +61,7 @@ function loadState() {
     // Колекції, яких не було в ранніх версіях, просто зʼявляються порожніми —
     // старе сховище через це не ламається.
     equipment: toList(raw.equipment, normalizeEquipment),
+    crew: toList(raw.crew, normalizeCrew),
     estimates: toList(raw.estimates, normalizeEstimate),
     settings: { ...DEFAULT_SETTINGS, ...(raw.settings ?? {}) },
   };
@@ -93,6 +96,7 @@ export function update(mutator) {
     tasks: [...state.tasks],
     ideas: [...state.ideas],
     equipment: [...state.equipment],
+    crew: [...state.crew],
     estimates: [...state.estimates],
     settings: { ...state.settings },
   };
@@ -111,6 +115,7 @@ export function replaceState(next) {
     tasks: toList(next.tasks, normalizeTask),
     ideas: toList(next.ideas, normalizeIdea),
     equipment: toList(next.equipment, normalizeEquipment),
+    crew: toList(next.crew, normalizeCrew),
     estimates: toList(next.estimates, normalizeEstimate),
     settings: { ...DEFAULT_SETTINGS, ...(next.settings ?? {}) },
   };
@@ -149,6 +154,7 @@ const COLLECTIONS = {
   tasks: 'tasks',
   ideas: 'ideas',
   equipment: 'equipment',
+  crew: 'crew',
   estimates: 'estimates',
 };
 
@@ -184,10 +190,11 @@ export function removeItem(collection, id) {
     // Позиції кошторисів памʼятають, з якої техніки їх додали. Саму позицію
     // зберігаємо — ціна вже зафіксована й переписувати кошторис заднім числом
     // не можна, — але посилання на видалений запис прибираємо.
-    if (collection === 'equipment') {
+    if (collection === 'equipment' || collection === 'crew') {
+      const field = collection === 'equipment' ? 'equipmentId' : 'crewId';
       draft.estimates = draft.estimates.map((estimate) => ({
         ...estimate,
-        items: estimate.items.map((item) => (item.equipmentId === id ? { ...item, equipmentId: null } : item)),
+        items: estimate.items.map((item) => (item[field] === id ? { ...item, [field]: null } : item)),
       }));
     }
   });

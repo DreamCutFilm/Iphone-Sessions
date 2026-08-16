@@ -3,6 +3,7 @@
 
 import { ACTIVE_STATUSES, priorityWeight } from './models.js';
 import { daysUntil, todayISO } from './dates.js';
+import { crewPayouts } from './estimates.js';
 
 export function activeProjects(state) {
   return state.projects
@@ -89,6 +90,56 @@ export function upcomingReminders(state, now = new Date()) {
   return state.tasks
     .filter((task) => !task.done && task.remindAt && new Date(task.remindAt).getTime() > now.getTime())
     .sort((a, b) => new Date(a.remindAt) - new Date(b.remindAt));
+}
+
+export function estimatesOfProject(state, projectId) {
+  return state.estimates
+    .filter((estimate) => estimate.projectId === projectId)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/**
+ * Гонорари команди по всьому проєкту: зведення з усіх його кошторисів.
+ *
+ * Це не окремий список, який довелося б вести паралельно, а погляд на ті самі
+ * позиції кошторису під іншим кутом — скільки ти маєш виплатити людям.
+ * Тому суми тут не можуть розійтися з кошторисом за визначенням.
+ */
+export function projectPayouts(state, projectId) {
+  const estimates = estimatesOfProject(state, projectId);
+  const byPerson = new Map();
+  let total = 0;
+
+  for (const estimate of estimates) {
+    for (const entry of crewPayouts(estimate)) {
+      total += entry.payout;
+
+      // Одну людину могли внести в кілька кошторисів — зводимо в один рядок.
+      // Позиції без привʼязки до каталогу групуються за назвою.
+      const key = entry.crewId ?? `title:${entry.title}`;
+      const existing = byPerson.get(key);
+
+      if (existing) {
+        existing.payout += entry.payout;
+        existing.lines.push({ estimate, entry });
+      } else {
+        byPerson.set(key, {
+          key,
+          crewId: entry.crewId,
+          title: entry.title,
+          payout: entry.payout,
+          currency: estimate.currency,
+          lines: [{ estimate, entry }],
+        });
+      }
+    }
+  }
+
+  return {
+    people: [...byPerson.values()].sort((a, b) => b.payout - a.payout),
+    total: Math.round(total * 100) / 100,
+    currency: estimates[0]?.currency ?? state.settings.currency,
+  };
 }
 
 export function starredIdeas(state) {

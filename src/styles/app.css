@@ -601,6 +601,13 @@ select.input {
   align-self: center;
 }
 
+.catalog-links { display: flex; gap: 10px; margin-bottom: 4px; }
+.catalog-links .btn { flex: 1; min-width: 0; font-size: 14px; padding: 12px 8px; }
+
+/* Позиція «тільки для мене»: приглушена, бо в рахунку клієнта її немає. */
+.row.is-internal { border-left: 3px solid var(--warn); }
+.row.is-internal .item-amount { color: var(--muted); }
+
 .item-grid { display: flex; gap: 10px; }
 .item-grid .field { flex: 1; min-width: 0; }
 
