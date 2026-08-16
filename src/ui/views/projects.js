@@ -9,7 +9,7 @@ import { estimateTotals, estimateStatusLabel } from '../../core/estimates.js';
 // із налаштувань — тому тут потрібна саме версія з явним аргументом.
 import { formatMoney as formatMoneyIn } from '../../core/locale.js';
 import { getState } from '../../core/store.js';
-import { projectById, tasksOfProject } from '../../core/selectors.js';
+import { projectById, tasksOfProject, projectPayouts, projectFinance } from '../../core/selectors.js';
 import { PROJECT_STATUSES, ACTIVE_STATUSES, statusLabel } from '../../core/models.js';
 import { formatDate, describeDue, weekdayShort, daysUntil } from '../../core/dates.js';
 import { mapsLink, isValidCoordinate, formatCoordinates } from '../../core/geo.js';
@@ -153,6 +153,56 @@ export function projectDetailView(projectId) {
       }))
     : emptyState('Кошторису ще немає', 'Склади — позиції беруться з каталогу техніки.'));
 
+  // Гроші проєкту: скільки платить клієнт, скільки з цього піде на оренду
+  // та гонорари, і що лишається тобі.
+  const finance = projectFinance(state, project.id);
+  if (finance.income > 0 || finance.expenses > 0) {
+    page.append(sectionTitle('Гроші', finance.basisLabel ? el('span.section-hint', finance.basisLabel) : null));
+
+    page.append(el('div.tool-hero.hero--inline',
+      el('p.tool-hero-value', formatMoneyIn(finance.profit, finance.currency)),
+      el('p.tool-hero-label',
+        finance.profit >= 0
+          ? `лишається тобі · ${finance.marginPercent}% від суми клієнта`
+          : 'збиток — витрати більші за суму клієнта')));
+
+    page.append(el('div.result',
+      moneyRow('Клієнт платить', formatMoneyIn(finance.income, finance.currency), 'accent'),
+      finance.rental > 0 ? moneyRow('Оренда техніки', `−${formatMoneyIn(finance.rental, finance.currency)}`) : null,
+      finance.payouts > 0 ? moneyRow('Гонорари команді', `−${formatMoneyIn(finance.payouts, finance.currency)}`) : null,
+      finance.other > 0 ? moneyRow('Інші витрати', `−${formatMoneyIn(finance.other, finance.currency)}`) : null,
+      moneyRow('Усього витрат', `−${formatMoneyIn(finance.expenses, finance.currency)}`),
+      moneyRow('Заробіток', formatMoneyIn(finance.profit, finance.currency), finance.profit >= 0 ? 'accent' : 'danger'),
+    ));
+
+    page.append(el('p.settings-note',
+      'Сума клієнта — без податку: він проходить крізь тебе й твоїм заробітком ніколи не був. ' +
+      'Це видно лише тобі.'));
+  }
+
+  // Гонорари — окремою графою одразу під кошторисами. Це не другий список,
+  // а зведення тих самих позицій: скільки ти маєш виплатити людям.
+  const payouts = projectPayouts(state, project.id);
+  if (payouts.people.length) {
+    page.append(sectionTitle(
+      'Гонорари',
+      el('span.section-hint', formatMoneyIn(payouts.total, payouts.currency)),
+    ));
+    page.append(el('div.list', payouts.people.map((person) => el(
+      'article.row',
+      person.crewId ? { onclick: () => navigate('/crew') } : null,
+      el('span.row-mark', '👤'),
+      el('div.row-body',
+        el('p.row-title', person.title),
+        el('p.row-note', person.lines.length > 1
+          ? `${person.lines.length} позиції в кошторисах`
+          : person.lines[0].entry.count)),
+      el('span.item-amount', formatMoneyIn(person.payout, person.currency)),
+    ))));
+    page.append(el('p.settings-note',
+      'Це те, що ти виплачуєш команді. Суми беруться з кошторисів проєкту, тож розійтися з ними не можуть.'));
+  }
+
   if (ideas.length) {
     page.append(sectionTitle('Ідеї', el('button.link', { type: 'button', onclick: () => navigate('/ideas') }, 'усі')));
     page.append(el('div.list', ideas.slice(0, 5).map((idea) => el(
@@ -164,6 +214,13 @@ export function projectDetailView(projectId) {
 
   page.append(fab('Нова задача', () => editTask(null, { projectId: project.id })));
   return page;
+}
+
+/** Рядок підсумку в блоці грошей. */
+function moneyRow(label, value, variant = '') {
+  return el(`div.result-row${variant ? `.result-row--${variant}` : ''}`,
+    el('span.result-label', label),
+    el('span.result-value', value));
 }
 
 export { ACTIVE_STATUSES };

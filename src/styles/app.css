@@ -399,6 +399,16 @@ body.is-locked { overscroll-behavior: none; }
   border-bottom: 1px solid var(--line);
 }
 .tool-hero.is-empty { display: none; }
+
+/* Той самий блок, але вбудований у сторінку, а не закріплений угорі. */
+.tool-hero.hero--inline {
+  position: static;
+  margin: 0 0 10px;
+  padding: 16px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
 .tool-hero-value {
   margin: 0;
   font-size: clamp(26px, 9vw, 38px);
@@ -600,6 +610,13 @@ select.input {
   white-space: nowrap;
   align-self: center;
 }
+
+.catalog-links { display: flex; gap: 10px; margin-bottom: 4px; }
+.catalog-links .btn { flex: 1; min-width: 0; font-size: 14px; padding: 12px 8px; }
+
+/* Позиція «тільки для мене»: приглушена, бо в рахунку клієнта її немає. */
+.row.is-internal { border-left: 3px solid var(--warn); }
+.row.is-internal .item-amount { color: var(--muted); }
 
 .item-grid { display: flex; gap: 10px; }
 .item-grid .field { flex: 1; min-width: 0; }

@@ -9,7 +9,7 @@ import { getState, patchItem } from '../../core/store.js';
 import { projectById } from '../../core/selectors.js';
 import {
   estimateTotals, totalsByCategory, itemAmount, estimateToText,
-  estimateStatusLabel, describeItemCount, ESTIMATE_STATUSES,
+  estimateStatusLabel, describeItemCount, itemCost, costByPurpose, ESTIMATE_STATUSES,
 } from '../../core/estimates.js';
 import { formatMoney } from '../../core/locale.js';
 import { formatDate, toDateOnly } from '../../core/dates.js';
@@ -24,9 +24,11 @@ export function estimatesView() {
   }));
 
   page.append(el(
-    'button.btn.btn--ghost.btn--wide',
-    { type: 'button', onclick: () => navigate('/equipment') },
-    `🎒 Каталог техніки · ${state.equipment.length}`,
+    'div.catalog-links',
+    el('button.btn.btn--ghost', { type: 'button', onclick: () => navigate('/equipment') },
+      `🎒 Техніка · ${state.equipment.length}`),
+    el('button.btn.btn--ghost', { type: 'button', onclick: () => navigate('/crew') },
+      `👤 Команда · ${state.crew.length}`),
   ));
 
   if (!state.estimates.length) {
@@ -87,6 +89,7 @@ export function estimateDetailView(estimateId) {
 
   const totals = estimateTotals(estimate);
   const project = projectById(state, estimate.projectId);
+  const costs = costByPurpose(estimate);
 
   page.append(pageHeader(estimate.title, {
     subtitle: project ? project.title : null,
@@ -100,8 +103,8 @@ export function estimateDetailView(estimateId) {
 
   // Внутрішні цифри — те, чого клієнт не побачить ніколи.
   page.append(el('div.stats',
-    statTile(formatMoney(totals.cost, estimate.currency), 'собівартість'),
-    statTile(formatMoney(totals.margin, estimate.currency), 'маржа', totals.margin > 0 ? '' : 'danger'),
+    statTile(formatMoney(totals.cost, estimate.currency), 'витрати'),
+    statTile(formatMoney(totals.margin, estimate.currency), 'заробиш', totals.margin >= 0 ? '' : 'danger'),
     statTile(`${totals.marginPercent}%`, 'від суми')));
 
   page.append(el('div.facts',
@@ -124,11 +127,15 @@ export function estimateDetailView(estimateId) {
       page.append(sectionTitle(group.label, el('span.section-hint', formatMoney(group.amount, estimate.currency))));
       page.append(el('div.list', group.items.map((item) => el(
         'article.row',
-        { onclick: () => editEstimateItem(estimate, item) },
+        { onclick: () => editEstimateItem(estimate, item), class: item.internalOnly ? 'is-internal' : '' },
         el('div.row-body',
           el('p.row-title', item.title),
-          el('p.row-note', `${describeItemCount(item)} × ${formatMoney(item.unitPrice, estimate.currency)}`)),
-        el('span.item-amount', formatMoney(itemAmount(item), estimate.currency)),
+          el('p.row-note', item.internalOnly
+            ? `${describeItemCount(item)} · виплата ${formatMoney(itemCost(item), estimate.currency)}`
+            : `${describeItemCount(item)} × ${formatMoney(item.unitPrice, estimate.currency)}`),
+          item.internalOnly ? el('div.row-meta', chip('тільки для мене', 'warn')) : null),
+        el('span.item-amount',
+          item.internalOnly ? '—' : formatMoney(itemAmount(item), estimate.currency)),
       ))));
     }
 
@@ -138,8 +145,12 @@ export function estimateDetailView(estimateId) {
       totals.discount > 0 ? totalRow('Знижка', `−${formatMoney(totals.discount, estimate.currency)}`) : null,
       totals.tax > 0 ? totalRow('Податок', formatMoney(totals.tax, estimate.currency)) : null,
       totalRow('До сплати', formatMoney(totals.total, estimate.currency), 'accent'),
-      totalRow('Собівартість', formatMoney(totals.cost, estimate.currency)),
-      totalRow('Залишається', `${formatMoney(totals.margin, estimate.currency)} · ${totals.marginPercent}%`, 'accent'),
+      costs.rental > 0 ? totalRow('Оренда техніки', `−${formatMoney(costs.rental, estimate.currency)}`) : null,
+      costs.payouts > 0 ? totalRow('Гонорари команді', `−${formatMoney(costs.payouts, estimate.currency)}`) : null,
+      costs.other > 0 ? totalRow('Інші витрати', `−${formatMoney(costs.other, estimate.currency)}`) : null,
+      totalRow('Усього витрат', `−${formatMoney(totals.cost, estimate.currency)}`),
+      totalRow('Заробиш', `${formatMoney(totals.margin, estimate.currency)} · ${totals.marginPercent}%`,
+        totals.margin >= 0 ? 'accent' : 'danger'),
     ));
   }
 

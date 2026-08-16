@@ -17,13 +17,15 @@ import {
   lonLatToTile, tileToLonLat, tileUrl, clampZoom, wrapLongitude,
   parseCoordinates, mapsLink,
 } from '../src/core/geo.js';
-import { taskOrder } from '../src/core/selectors.js';
+import { taskOrder, projectPayouts, projectFinance } from '../src/core/selectors.js';
 import { createTask, createProject } from '../src/core/models.js';
 import { formatMoney, currencySymbol, getCurrency, getLanguage, CURRENCIES, LANGUAGES } from '../src/core/locale.js';
 import { createEquipment, unitMargin } from '../src/core/equipment.js';
+import { createCrew, crewLabel, clientRate, crewMargin } from '../src/core/crew.js';
 import {
   createEstimate, createItem, itemAmount, estimateTotals,
   totalsByCategory, clientView, itemFromEquipment, estimateToText, describeItemCount,
+  itemCost, itemFromCrew, crewPayouts, costByPurpose,
 } from '../src/core/estimates.js';
 
 const near = (actual, expected, tolerance, message) => {
@@ -518,6 +520,234 @@ test('клієнтський вигляд не містить жодного с�
 
   assert.equal(view.total, 28000, 'а підсумок для клієнта на місці');
   assert.equal(view.groups.length, 2);
+});
+
+// --- Гонорари команди ------------------------------------------------------
+
+test('команда: позиція з каталогу бере гонорар у собівартість', () => {
+  const operator = createCrew({ name: 'Андрій', role: 'Оператор камери', fee: 4000, rate: 6000 });
+  const item = itemFromCrew(operator, { shifts: 2, clientRate: clientRate(operator) });
+
+  assert.equal(item.category, 'crew');
+  assert.equal(item.crewId, operator.id);
+  assert.equal(item.unitCost, 4000, 'гонорар людини — це твоя витрата');
+  assert.equal(item.unitPrice, 6000, 'а клієнту виставляєш свою ставку');
+  assert.equal(itemAmount(item), 12000);
+  assert.equal(itemCost(item), 8000);
+});
+
+test('команда: без окремої ставки клієнту гонорар передається без націнки', () => {
+  const editor = createCrew({ name: 'Оля', role: 'Монтажер', fee: 5000 });
+  assert.equal(clientRate(editor), 5000);
+  assert.equal(crewMargin(editor), 0);
+});
+
+test('команда: підпис — імʼя з роллю, або сама роль, якщо людина ще не знайдена', () => {
+  assert.equal(crewLabel(createCrew({ name: 'Андрій', role: 'Оператор' })), 'Андрій — Оператор');
+  assert.equal(crewLabel(createCrew({ role: 'Режисер трансляції (пульт)' })), 'Режисер трансляції (пульт)');
+});
+
+test('позиція «тільки для мене» не потрапляє в рахунок, але входить у витрати', () => {
+  const estimate = createEstimate({
+    title: 'Трансляція',
+    items: [
+      createItem({ title: 'Знімальна зміна', category: 'crew', unitPrice: 20000, unitCost: 0 }),
+      // Монтажера найняв, але клієнту окремим рядком не показуєш
+      createItem({ title: 'Монтажер', category: 'crew', unitPrice: 0, unitCost: 6000, internalOnly: true }),
+    ],
+  });
+
+  const totals = estimateTotals(estimate);
+  assert.equal(totals.subtotal, 20000, 'клієнт бачить лише зміну');
+  assert.equal(totals.cost, 6000, 'а монтажера ти все одно оплачуєш');
+  assert.equal(totals.margin, 14000);
+});
+
+test('прихована позиція не витікає в клієнтський вигляд', () => {
+  const estimate = createEstimate({
+    items: [
+      createItem({ title: 'Знімальна зміна', category: 'crew', unitPrice: 20000 }),
+      createItem({ title: 'Монтажер Оля', category: 'crew', unitCost: 6000, internalOnly: true }),
+    ],
+  });
+
+  const serialized = JSON.stringify(clientView(estimate));
+  assert.ok(!serialized.includes('Монтажер'), 'прихованої позиції в рахунку немає');
+  assert.ok(serialized.includes('Знімальна зміна'), 'звичайна на місці');
+
+  const text = estimateToText(estimate, formatMoney);
+  assert.ok(!text.includes('Монтажер'), 'і в тексті для месенджера теж немає');
+});
+
+test('гонорари кошторису: хто скільки має отримати', () => {
+  const estimate = createEstimate({
+    items: [
+      createItem({ title: 'Оператор Андрій', category: 'crew', crewId: 'crw_1', shifts: 2, unitPrice: 6000, unitCost: 4000 }),
+      createItem({ title: 'Монтажер Оля', category: 'crew', crewId: 'crw_2', unitCost: 6000, internalOnly: true }),
+      createItem({ title: 'Sony FX6', category: 'equipment', unitPrice: 3000, unitCost: 1000 }),
+    ],
+  });
+
+  const payouts = crewPayouts(estimate);
+  assert.equal(payouts.length, 2, 'техніка у виплатах не рахується');
+  assert.equal(payouts[0].payout, 8000, '2 зміни по 4 000');
+  assert.equal(payouts[0].billed, 12000);
+  assert.equal(payouts[1].payout, 6000);
+  assert.equal(payouts[1].billed, 0, 'прихована позиція клієнту не виставлена');
+});
+
+test('гонорари проєкту зводяться з усіх його кошторисів', () => {
+  const state = {
+    settings: { currency: 'UAH' },
+    estimates: [
+      createEstimate({
+        projectId: 'prj_1', currency: 'UAH', createdAt: '2026-08-01T10:00:00.000Z',
+        items: [createItem({ title: 'Оператор Андрій', category: 'crew', crewId: 'crw_1', shifts: 2, unitCost: 4000 })],
+      }),
+      createEstimate({
+        projectId: 'prj_1', currency: 'UAH',
+        items: [
+          // Той самий оператор у другому кошторисі — має злитися в один рядок
+          createItem({ title: 'Оператор Андрій', category: 'crew', crewId: 'crw_1', unitCost: 4000 }),
+          createItem({ title: 'Монтажер Оля', category: 'crew', crewId: 'crw_2', unitCost: 6000 }),
+        ],
+      }),
+      // Чужий проєкт до підсумку потрапити не має
+      createEstimate({
+        projectId: 'prj_2', currency: 'UAH',
+        items: [createItem({ title: 'Хтось інший', category: 'crew', unitCost: 99000 })],
+      }),
+    ],
+  };
+
+  const payouts = projectPayouts(state, 'prj_1');
+  assert.equal(payouts.total, 18000, '8 000 + 4 000 + 6 000');
+  assert.equal(payouts.people.length, 2, 'одна людина — один рядок');
+
+  const andriy = payouts.people.find((person) => person.crewId === 'crw_1');
+  assert.equal(andriy.payout, 12000, 'обидва кошториси разом');
+  assert.equal(andriy.lines.length, 2);
+
+  // Найбільша виплата йде першою — так видно головну статтю витрат
+  assert.equal(payouts.people[0].crewId, 'crw_1');
+});
+
+test('гонорари проєкту без кошторисів — нуль, а не помилка', () => {
+  const payouts = projectPayouts({ settings: { currency: 'UAH' }, estimates: [] }, 'prj_1');
+  assert.equal(payouts.total, 0);
+  assert.deepEqual(payouts.people, []);
+});
+
+// --- Заробіток -------------------------------------------------------------
+
+test('витрати розкладаються на оренду, гонорари та решту', () => {
+  const estimate = createEstimate({
+    items: [
+      createItem({ title: 'Камера', category: 'equipment', unitPrice: 10000, unitCost: 3000 }),
+      createItem({ title: 'Світло', category: 'equipment', unitPrice: 4000, unitCost: 1500 }),
+      createItem({ title: 'Оператор', category: 'crew', unitPrice: 8000, unitCost: 5000 }),
+      createItem({ title: 'Таксі', category: 'logistics', unitPrice: 1000, unitCost: 800 }),
+    ],
+  });
+
+  const costs = costByPurpose(estimate);
+  assert.equal(costs.rental, 4500, 'оренда: 3 000 + 1 500');
+  assert.equal(costs.payouts, 5000);
+  assert.equal(costs.other, 800);
+  assert.equal(costs.total, 10300);
+  assert.equal(costs.total, estimateTotals(estimate).cost, 'розклад має сходитися із загальною собівартістю');
+});
+
+/** Проєкт із двома кошторисами: погодженим і чернеткою-варіантом. */
+function financeState() {
+  return {
+    settings: { currency: 'UAH' },
+    projects: [{ id: 'p1', title: 'Концерт', fee: null }],
+    estimates: [
+      createEstimate({
+        projectId: 'p1', status: 'approved', currency: 'UAH', taxPercent: 20,
+        items: [
+          createItem({ title: 'Камера', category: 'equipment', unitPrice: 10000, unitCost: 3000 }),
+          createItem({ title: 'Оператор', category: 'crew', unitPrice: 8000, unitCost: 5000 }),
+        ],
+      }),
+      createEstimate({
+        projectId: 'p1', status: 'draft', currency: 'UAH',
+        items: [createItem({ title: 'Дорожчий варіант', category: 'equipment', unitPrice: 99000, unitCost: 50000 })],
+      }),
+    ],
+  };
+}
+
+test('заробіток: від суми клієнта віднімаються всі витрати', () => {
+  const finance = projectFinance(financeState(), 'p1');
+  assert.equal(finance.income, 18000);
+  assert.equal(finance.rental, 3000);
+  assert.equal(finance.payouts, 5000);
+  assert.equal(finance.expenses, 8000);
+  assert.equal(finance.profit, 10000);
+  assert.equal(finance.marginPercent, 55.56);
+});
+
+test('заробіток рахується за найпізнішою стадією, а не сумою всіх варіантів', () => {
+  // Дві чернетки поруч — це два варіанти ціни, а не подвійний дохід.
+  const finance = projectFinance(financeState(), 'p1');
+  assert.equal(finance.basis, 'approved', 'погоджений важить більше за чернетку');
+  assert.equal(finance.estimateCount, 1);
+  assert.ok(!finance.basisLabel.includes('чернет'), 'підпис має пояснювати, звідки цифра');
+
+  // Приберемо погоджений — тоді рахуватись має чернетка.
+  const state = financeState();
+  state.estimates = state.estimates.filter((estimate) => estimate.status !== 'approved');
+  const draftOnly = projectFinance(state, 'p1');
+  assert.equal(draftOnly.basis, 'draft');
+  assert.equal(draftOnly.income, 99000);
+});
+
+test('заробіток: податок не рахується доходом', () => {
+  // ПДВ проходить крізь тебе — у кишені він не лишається.
+  const finance = projectFinance(financeState(), 'p1');
+  const estimate = financeState().estimates[0];
+  assert.equal(estimateTotals(estimate).total, 21600, 'клієнт платить із податком');
+  assert.equal(finance.income, 18000, 'а доходом рахується сума без нього');
+});
+
+test('заробіток: відхилений кошторис не враховується', () => {
+  const state = financeState();
+  state.estimates = state.estimates.map((estimate) =>
+    estimate.status === 'approved' ? { ...estimate, status: 'declined' } : estimate);
+
+  const finance = projectFinance(state, 'p1');
+  assert.equal(finance.basis, 'draft', 'відхилений випадає, лишається чернетка');
+  assert.equal(finance.income, 99000);
+});
+
+test('заробіток: без кошторисів береться гонорар із самого проєкту', () => {
+  const state = { settings: { currency: 'UAH' }, projects: [{ id: 'p1', fee: 30000 }], estimates: [] };
+  const finance = projectFinance(state, 'p1');
+  assert.equal(finance.income, 30000);
+  assert.equal(finance.profit, 30000, 'витрат немає — заробіток дорівнює гонорару');
+  assert.equal(finance.basisLabel, 'за гонораром проєкту');
+});
+
+test('заробіток: витрати більші за дохід дають збиток, а не нуль', () => {
+  const state = {
+    settings: { currency: 'UAH' },
+    projects: [{ id: 'p1', fee: null }],
+    estimates: [createEstimate({
+      projectId: 'p1', status: 'approved', currency: 'UAH',
+      items: [
+        createItem({ title: 'Зміна', category: 'crew', unitPrice: 6000, unitCost: 6000 }),
+        // Монтажера найняв, але клієнту не виставив
+        createItem({ title: 'Монтажер', category: 'crew', unitCost: 4000, internalOnly: true }),
+      ],
+    })],
+  };
+
+  const finance = projectFinance(state, 'p1');
+  assert.equal(finance.income, 6000);
+  assert.equal(finance.payouts, 10000);
+  assert.equal(finance.profit, -4000, 'збиток показується як є');
 });
 
 test('кількість позиції відмінюється правильно й без зайвого «1 ×»', () => {

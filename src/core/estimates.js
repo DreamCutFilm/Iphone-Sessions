@@ -98,6 +98,12 @@ export function createItem(input = {}) {
     category: oneOf(input.category, ITEM_CATEGORY_IDS, 'equipment'),
     // Звідки взяли позицію — щоб потім бачити, яка техніка найходовіша.
     equipmentId: text(input.equipmentId) || null,
+    // Кого найняли на цю позицію. Саме за цим полем збираються виплати
+    // по проєкту: хто скільки має отримати.
+    crewId: text(input.crewId) || null,
+    // Позиція тільки для внутрішнього обліку: людину найняв, витрату
+    // рахуєш, а клієнту окремим рядком не показуєш.
+    internalOnly: Boolean(input.internalOnly),
     unit: UNITS.includes(input.unit) ? input.unit : 'зміна',
     quantity: amount(input.quantity, 1),
     // Скільки змін працює ця кількість: 2 камери × 3 зміни.
@@ -170,7 +176,11 @@ export function normalizeEstimate(raw) {
 export function estimateTotals(estimate) {
   const items = Array.isArray(estimate?.items) ? estimate.items : [];
 
-  const subtotal = round(items.reduce((sum, item) => sum + itemAmount(item), 0));
+  // Позиції «тільки для мене» не потрапляють у рахунок клієнту, але витрату
+  // на них ти несеш — тож у собівартість вони входять нарівні з рештою.
+  const billable = items.filter((item) => !item.internalOnly);
+
+  const subtotal = round(billable.reduce((sum, item) => sum + itemAmount(item), 0));
   const cost = round(items.reduce((sum, item) => sum + itemCost(item), 0));
 
   const discountPercent = clampPercent(estimate?.discountPercent);
@@ -187,9 +197,13 @@ export function estimateTotals(estimate) {
   return { subtotal, discount, afterDiscount, tax, total, cost, margin, marginPercent, itemCount: items.length };
 }
 
-/** Підсумки за розділами — так кошторис читають клієнти. */
-export function totalsByCategory(estimate) {
-  const items = Array.isArray(estimate?.items) ? estimate.items : [];
+/**
+ * Підсумки за розділами.
+ * billableOnly — для клієнтського вигляду: без позицій «тільки для мене».
+ */
+export function totalsByCategory(estimate, { billableOnly = false } = {}) {
+  const all = Array.isArray(estimate?.items) ? estimate.items : [];
+  const items = billableOnly ? all.filter((item) => !item.internalOnly) : all;
 
   return ITEM_CATEGORIES
     .map((category) => {
@@ -198,7 +212,10 @@ export function totalsByCategory(estimate) {
         id: category.id,
         label: category.label,
         items: own,
-        amount: round(own.reduce((sum, item) => sum + itemAmount(item), 0)),
+        // Приховані позиції не мають додаватись до суми розділу: у рахунку
+        // клієнта їх немає, і підсумок мусить сходитися з тим, що він бачить.
+        amount: round(own.reduce((sum, item) => sum + (item.internalOnly ? 0 : itemAmount(item)), 0)),
+        payout: round(own.reduce((sum, item) => sum + itemCost(item), 0)),
       };
     })
     .filter((group) => group.items.length > 0);
@@ -218,7 +235,7 @@ export function clientView(estimate) {
     currency: estimate.currency,
     notes: estimate.clientNotes,
     sentAt: estimate.sentAt,
-    groups: totalsByCategory(estimate).map((group) => ({
+    groups: totalsByCategory(estimate, { billableOnly: true }).map((group) => ({
       label: group.label,
       amount: group.amount,
       items: group.items.map((item) => ({
@@ -278,6 +295,74 @@ export function estimateToText(estimate, formatAmount) {
   }
 
   return lines.join('\n');
+}
+
+/**
+ * Витрати кошторису за призначенням: оренда техніки, гонорари людям, решта.
+ *
+ * Рахується з собівартості позицій — це гроші, які підуть із твоєї кишені,
+ * незалежно від того, скільки ти виставив клієнту.
+ */
+export function costByPurpose(estimate) {
+  const items = Array.isArray(estimate?.items) ? estimate.items : [];
+
+  let rental = 0;
+  let payouts = 0;
+  let other = 0;
+
+  for (const item of items) {
+    const cost = itemCost(item);
+    if (cost <= 0) continue;
+
+    if (item.category === 'equipment') rental += cost;
+    else if (item.category === 'crew' || item.crewId) payouts += cost;
+    else other += cost;
+  }
+
+  return {
+    rental: round(rental),
+    payouts: round(payouts),
+    other: round(other),
+    total: round(rental + payouts + other),
+  };
+}
+
+/**
+ * Гонорари людей із цього кошторису: кому й скільки ти маєш заплатити.
+ *
+ * Рахується з собівартості позиції, а не з ціни для клієнта: це гроші,
+ * які підуть із твоєї кишені, незалежно від того, скільки ти виставив.
+ */
+export function crewPayouts(estimate) {
+  const items = Array.isArray(estimate?.items) ? estimate.items : [];
+
+  return items
+    .filter((item) => item.category === 'crew' || item.crewId)
+    .map((item) => ({
+      itemId: item.id,
+      crewId: item.crewId,
+      title: item.title,
+      count: describeItemCount(item),
+      payout: itemCost(item),
+      billed: item.internalOnly ? 0 : itemAmount(item),
+      internalOnly: Boolean(item.internalOnly),
+    }))
+    .filter((entry) => entry.payout > 0 || entry.billed > 0);
+}
+
+/** Позиція кошторису з каталогу команди — з підставленими ставками. */
+export function itemFromCrew(member, { shifts = 1, quantity = 1, label, clientRate } = {}) {
+  return createItem({
+    title: label,
+    category: 'crew',
+    crewId: member.id,
+    unit: 'зміна',
+    quantity,
+    shifts,
+    unitPrice: clientRate,
+    // Гонорар людини — це те, що ти платиш, тобто твоя собівартість.
+    unitCost: member.fee ?? 0,
+  });
 }
 
 /** Позиція кошторису з каталогу техніки — з підставленими цінами. */
