@@ -298,6 +298,36 @@ export function estimateToText(estimate, formatAmount) {
 }
 
 /**
+ * Витрати кошторису за призначенням: оренда техніки, гонорари людям, решта.
+ *
+ * Рахується з собівартості позицій — це гроші, які підуть із твоєї кишені,
+ * незалежно від того, скільки ти виставив клієнту.
+ */
+export function costByPurpose(estimate) {
+  const items = Array.isArray(estimate?.items) ? estimate.items : [];
+
+  let rental = 0;
+  let payouts = 0;
+  let other = 0;
+
+  for (const item of items) {
+    const cost = itemCost(item);
+    if (cost <= 0) continue;
+
+    if (item.category === 'equipment') rental += cost;
+    else if (item.category === 'crew' || item.crewId) payouts += cost;
+    else other += cost;
+  }
+
+  return {
+    rental: round(rental),
+    payouts: round(payouts),
+    other: round(other),
+    total: round(rental + payouts + other),
+  };
+}
+
+/**
  * Гонорари людей із цього кошторису: кому й скільки ти маєш заплатити.
  *
  * Рахується з собівартості позиції, а не з ціни для клієнта: це гроші,

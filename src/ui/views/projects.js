@@ -9,7 +9,7 @@ import { estimateTotals, estimateStatusLabel } from '../../core/estimates.js';
 // із налаштувань — тому тут потрібна саме версія з явним аргументом.
 import { formatMoney as formatMoneyIn } from '../../core/locale.js';
 import { getState } from '../../core/store.js';
-import { projectById, tasksOfProject, projectPayouts } from '../../core/selectors.js';
+import { projectById, tasksOfProject, projectPayouts, projectFinance } from '../../core/selectors.js';
 import { PROJECT_STATUSES, ACTIVE_STATUSES, statusLabel } from '../../core/models.js';
 import { formatDate, describeDue, weekdayShort, daysUntil } from '../../core/dates.js';
 import { mapsLink, isValidCoordinate, formatCoordinates } from '../../core/geo.js';
@@ -153,6 +153,33 @@ export function projectDetailView(projectId) {
       }))
     : emptyState('Кошторису ще немає', 'Склади — позиції беруться з каталогу техніки.'));
 
+  // Гроші проєкту: скільки платить клієнт, скільки з цього піде на оренду
+  // та гонорари, і що лишається тобі.
+  const finance = projectFinance(state, project.id);
+  if (finance.income > 0 || finance.expenses > 0) {
+    page.append(sectionTitle('Гроші', finance.basisLabel ? el('span.section-hint', finance.basisLabel) : null));
+
+    page.append(el('div.tool-hero.hero--inline',
+      el('p.tool-hero-value', formatMoneyIn(finance.profit, finance.currency)),
+      el('p.tool-hero-label',
+        finance.profit >= 0
+          ? `лишається тобі · ${finance.marginPercent}% від суми клієнта`
+          : 'збиток — витрати більші за суму клієнта')));
+
+    page.append(el('div.result',
+      moneyRow('Клієнт платить', formatMoneyIn(finance.income, finance.currency), 'accent'),
+      finance.rental > 0 ? moneyRow('Оренда техніки', `−${formatMoneyIn(finance.rental, finance.currency)}`) : null,
+      finance.payouts > 0 ? moneyRow('Гонорари команді', `−${formatMoneyIn(finance.payouts, finance.currency)}`) : null,
+      finance.other > 0 ? moneyRow('Інші витрати', `−${formatMoneyIn(finance.other, finance.currency)}`) : null,
+      moneyRow('Усього витрат', `−${formatMoneyIn(finance.expenses, finance.currency)}`),
+      moneyRow('Заробіток', formatMoneyIn(finance.profit, finance.currency), finance.profit >= 0 ? 'accent' : 'danger'),
+    ));
+
+    page.append(el('p.settings-note',
+      'Сума клієнта — без податку: він проходить крізь тебе й твоїм заробітком ніколи не був. ' +
+      'Це видно лише тобі.'));
+  }
+
   // Гонорари — окремою графою одразу під кошторисами. Це не другий список,
   // а зведення тих самих позицій: скільки ти маєш виплатити людям.
   const payouts = projectPayouts(state, project.id);
@@ -187,6 +214,13 @@ export function projectDetailView(projectId) {
 
   page.append(fab('Нова задача', () => editTask(null, { projectId: project.id })));
   return page;
+}
+
+/** Рядок підсумку в блоці грошей. */
+function moneyRow(label, value, variant = '') {
+  return el(`div.result-row${variant ? `.result-row--${variant}` : ''}`,
+    el('span.result-label', label),
+    el('span.result-value', value));
 }
 
 export { ACTIVE_STATUSES };

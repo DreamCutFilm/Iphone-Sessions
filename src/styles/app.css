@@ -399,6 +399,16 @@ body.is-locked { overscroll-behavior: none; }
   border-bottom: 1px solid var(--line);
 }
 .tool-hero.is-empty { display: none; }
+
+/* Той самий блок, але вбудований у сторінку, а не закріплений угорі. */
+.tool-hero.hero--inline {
+  position: static;
+  margin: 0 0 10px;
+  padding: 16px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
 .tool-hero-value {
   margin: 0;
   font-size: clamp(26px, 9vw, 38px);

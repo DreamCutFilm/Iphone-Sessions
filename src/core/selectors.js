@@ -3,7 +3,7 @@
 
 import { ACTIVE_STATUSES, priorityWeight } from './models.js';
 import { daysUntil, todayISO } from './dates.js';
-import { crewPayouts } from './estimates.js';
+import { crewPayouts, costByPurpose, estimateTotals } from './estimates.js';
 
 export function activeProjects(state) {
   return state.projects
@@ -140,6 +140,80 @@ export function projectPayouts(state, projectId) {
     total: Math.round(total * 100) / 100,
     currency: estimates[0]?.currency ?? state.settings.currency,
   };
+}
+
+/**
+ * Кошториси, за якими рахуються гроші проєкту.
+ *
+ * Береться найпізніша стадія, яка є: погоджені важать більше за надіслані,
+ * надіслані — за чернетки. Інакше два варіанти ціни, що лежать поруч,
+ * склалися б і показали дохід удвічі більший за справжній.
+ * Відхилені не рахуються ніколи.
+ */
+export function billingEstimates(state, projectId) {
+  const all = estimatesOfProject(state, projectId).filter((estimate) => estimate.status !== 'declined');
+
+  for (const stage of ['approved', 'sent', 'draft']) {
+    const found = all.filter((estimate) => estimate.status === stage);
+    if (found.length) return { estimates: found, basis: stage };
+  }
+  return { estimates: [], basis: null };
+}
+
+const BASIS_LABELS = {
+  approved: 'за погодженим кошторисом',
+  sent: 'за надісланим кошторисом',
+  draft: 'за чернеткою кошторису',
+};
+
+/**
+ * Гроші проєкту: скільки платить клієнт, скільки з цього піде на оренду
+ * й гонорари, і що лишиться тобі.
+ */
+export function projectFinance(state, projectId) {
+  const project = projectById(state, projectId);
+  const { estimates, basis } = billingEstimates(state, projectId);
+
+  let income = 0;
+  let rental = 0;
+  let payouts = 0;
+  let other = 0;
+
+  for (const estimate of estimates) {
+    const totals = estimateTotals(estimate);
+    const costs = costByPurpose(estimate);
+
+    // Дохід рахуємо БЕЗ податку: ПДВ ти лише передаєш далі, він ніколи
+    // не був твоїми грішми й у заробіток потрапляти не має.
+    income += totals.afterDiscount;
+    rental += costs.rental;
+    payouts += costs.payouts;
+    other += costs.other;
+  }
+
+  // Кошторисів ще немає — спираємось на гонорар, вписаний у сам проєкт.
+  const fallbackIncome = estimates.length === 0 && typeof project?.fee === 'number' ? project.fee : 0;
+  const totalIncome = round(income || fallbackIncome);
+  const expenses = round(rental + payouts + other);
+  const profit = round(totalIncome - expenses);
+
+  return {
+    income: totalIncome,
+    rental: round(rental),
+    payouts: round(payouts),
+    other: round(other),
+    expenses,
+    profit,
+    marginPercent: totalIncome > 0 ? round((profit / totalIncome) * 100) : 0,
+    basis,
+    basisLabel: basis ? BASIS_LABELS[basis] : (fallbackIncome ? 'за гонораром проєкту' : ''),
+    estimateCount: estimates.length,
+    currency: estimates[0]?.currency ?? state.settings.currency,
+  };
+}
+
+function round(value) {
+  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 }
 
 export function starredIdeas(state) {

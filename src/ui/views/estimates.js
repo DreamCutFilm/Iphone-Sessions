@@ -9,7 +9,7 @@ import { getState, patchItem } from '../../core/store.js';
 import { projectById } from '../../core/selectors.js';
 import {
   estimateTotals, totalsByCategory, itemAmount, estimateToText,
-  estimateStatusLabel, describeItemCount, itemCost, crewPayouts, ESTIMATE_STATUSES,
+  estimateStatusLabel, describeItemCount, itemCost, costByPurpose, ESTIMATE_STATUSES,
 } from '../../core/estimates.js';
 import { formatMoney } from '../../core/locale.js';
 import { formatDate, toDateOnly } from '../../core/dates.js';
@@ -89,7 +89,7 @@ export function estimateDetailView(estimateId) {
 
   const totals = estimateTotals(estimate);
   const project = projectById(state, estimate.projectId);
-  const payoutTotal = crewPayouts(estimate).reduce((sum, entry) => sum + entry.payout, 0);
+  const costs = costByPurpose(estimate);
 
   page.append(pageHeader(estimate.title, {
     subtitle: project ? project.title : null,
@@ -103,8 +103,8 @@ export function estimateDetailView(estimateId) {
 
   // Внутрішні цифри — те, чого клієнт не побачить ніколи.
   page.append(el('div.stats',
-    statTile(formatMoney(totals.cost, estimate.currency), 'собівартість'),
-    statTile(formatMoney(totals.margin, estimate.currency), 'маржа', totals.margin > 0 ? '' : 'danger'),
+    statTile(formatMoney(totals.cost, estimate.currency), 'витрати'),
+    statTile(formatMoney(totals.margin, estimate.currency), 'заробиш', totals.margin >= 0 ? '' : 'danger'),
     statTile(`${totals.marginPercent}%`, 'від суми')));
 
   page.append(el('div.facts',
@@ -145,9 +145,12 @@ export function estimateDetailView(estimateId) {
       totals.discount > 0 ? totalRow('Знижка', `−${formatMoney(totals.discount, estimate.currency)}`) : null,
       totals.tax > 0 ? totalRow('Податок', formatMoney(totals.tax, estimate.currency)) : null,
       totalRow('До сплати', formatMoney(totals.total, estimate.currency), 'accent'),
-      totalRow('Собівартість', formatMoney(totals.cost, estimate.currency)),
-      payoutTotal > 0 ? totalRow('З них гонорари команді', formatMoney(payoutTotal, estimate.currency)) : null,
-      totalRow('Залишається', `${formatMoney(totals.margin, estimate.currency)} · ${totals.marginPercent}%`, 'accent'),
+      costs.rental > 0 ? totalRow('Оренда техніки', `−${formatMoney(costs.rental, estimate.currency)}`) : null,
+      costs.payouts > 0 ? totalRow('Гонорари команді', `−${formatMoney(costs.payouts, estimate.currency)}`) : null,
+      costs.other > 0 ? totalRow('Інші витрати', `−${formatMoney(costs.other, estimate.currency)}`) : null,
+      totalRow('Усього витрат', `−${formatMoney(totals.cost, estimate.currency)}`),
+      totalRow('Заробиш', `${formatMoney(totals.margin, estimate.currency)} · ${totals.marginPercent}%`,
+        totals.margin >= 0 ? 'accent' : 'danger'),
     ));
   }
 
