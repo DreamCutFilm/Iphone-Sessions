@@ -15,6 +15,7 @@ import { estimatesView, estimateDetailView } from './ui/views/estimates.js';
 import { equipmentView } from './ui/views/equipment.js';
 import { crewView } from './ui/views/crew.js';
 import { settingsView } from './ui/views/settings.js';
+import { accountView } from './ui/views/account.js';
 
 const TABS = [
   { path: '/overview', label: 'Огляд', mark: '◎' },
@@ -51,6 +52,7 @@ route('/crew', () => render(crewView));
 route('/calc', () => render(calcMenuView));
 route('/calc/:tool', ({ tool }) => render(() => calcToolView(tool)));
 route('/settings', () => render(settingsView));
+route('/account', () => render(accountView));
 setNotFound(() => navigate('/overview', { replace: true }));
 
 function buildTabs(currentPath) {

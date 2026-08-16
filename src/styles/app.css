@@ -147,6 +147,13 @@ body.is-locked { overscroll-behavior: none; }
   text-transform: none; letter-spacing: 0; cursor: pointer;
 }
 
+/* Код запрошення диктують уголос і переписують — тому моноширинний шрифт
+   і розрядка: так «rn» не зливається в «m», а нуль не плутають з буквою. */
+.invite-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.08em;
+}
+
 /* --- Плитки-показники ---------------------------------------------------- */
 
 .stats { display: flex; gap: 8px; margin-bottom: 4px; }
