@@ -158,6 +158,11 @@ body.is-locked { overscroll-behavior: none; }
   content: ''; flex: 1; height: 1px; background: var(--line);
 }
 
+/* Список своїх під полем пошти. Обмежуємо висоту: у великій фірмі він
+   інакше виштовхнув би кнопку «Зберегти» кудись за край екрана. */
+.team-pick { margin-top: -4px; }
+.team-pick .list { max-height: 220px; overflow-y: auto; }
+
 /* Код запрошення диктують уголос і переписують — тому моноширинний шрифт
    і розрядка: так «rn» не зливається в «m», а нуль не плутають з буквою. */
 .invite-code {

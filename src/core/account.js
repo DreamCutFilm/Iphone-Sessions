@@ -103,7 +103,7 @@ export async function searchCompanies(text) {
 
 export async function teamOf(companyId) {
   const rows = await query('memberships', {
-    select: 'id,user_id,role,title,created_at,profiles(full_name,phone)',
+    select: 'id,user_id,role,title,created_at,profiles(full_name,phone,email)',
     filter: `company_id=eq.${companyId}`,
     order: 'created_at.asc',
   });
@@ -115,6 +115,7 @@ export async function teamOf(companyId) {
     title: row.title ?? '',
     name: row.profiles?.full_name || '',
     phone: row.profiles?.phone || '',
+    email: row.profiles?.email || '',
     isMe: row.user_id === currentUser()?.id,
   }));
 }

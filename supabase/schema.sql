@@ -18,11 +18,18 @@ create table if not exists public.profiles (
   id          uuid primary key references auth.users on delete cascade,
   full_name   text,
   phone       text,
+  -- Пошта, якою людина зайшла. Дублюється сюди зі службової таблиці навмисно:
+  -- звідти застосунок читати не може, а своїх по фірмі треба показувати
+  -- списком — інакше пошту довелося б диктувати й вписувати руками.
+  email       text,
   -- Ким людина зайшла з першого екрана: фірма чи клієнт.
   kind        text not null default 'company' check (kind in ('company', 'client')),
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
+
+-- Таблиця могла зʼявитися ще без цієї колонки — тоді рядок вище її не додасть.
+alter table public.profiles add column if not exists email text;
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -31,13 +38,17 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.profiles (id, full_name, kind)
+  insert into public.profiles (id, full_name, email, kind)
   values (
     new.id,
     coalesce(new.raw_user_meta_data ->> 'full_name', ''),
+    new.email,
     coalesce(new.raw_user_meta_data ->> 'kind', 'company')
   )
-  on conflict (id) do nothing;
+  on conflict (id) do update set
+    -- Пошту оновлюємо завжди: людина могла її змінити, і тоді старе значення
+    -- вказувало б у нікуди. Імʼя не чіпаємо — його могли виправити руками.
+    email = excluded.email;
   return new;
 end;
 $$;
@@ -46,6 +57,21 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- Зміна пошти має доїжджати до профілю, інакше гонорар почне вказувати
+-- на адресу, якої вже немає.
+drop trigger if exists on_auth_user_email_changed on auth.users;
+create trigger on_auth_user_email_changed
+  after update of email on auth.users
+  for each row execute function public.handle_new_user();
+
+-- Ті, хто зареєструвався до появи цієї колонки, лишилися б без пошти
+-- назавжди. Підтягуємо — і робимо це при кожному запуску схеми, бо
+-- дешево, а розбіжність тут коштувала б невидимого гонорару.
+update public.profiles p
+set email = u.email
+from auth.users u
+where u.id = p.id and p.email is distinct from u.email;
 
 -- ---------------------------------------------------------------------------
 -- 2. Фірми
@@ -657,12 +683,24 @@ begin
 
   for entry in select * from jsonb_array_elements(coalesce(p_payouts, '[]'::jsonb))
   loop
-    found := null;
-    if nullif(trim(coalesce(entry ->> 'email', '')), '') is not null then
+    -- Людину, вибрану зі списку команди, застосунок називає прямо. Пошта
+    -- лишається запасним шляхом: нею звʼязуються ті, кого вписали руками.
+    found := nullif(entry ->> 'user_id', '')::uuid;
+
+    if found is null and nullif(trim(coalesce(entry ->> 'email', '')), '') is not null then
       select u.id into found
       from auth.users u
       where lower(u.email) = lower(trim(entry ->> 'email'))
       limit 1;
+    end if;
+
+    -- Чужу людину в гонорари фірми підставити не можна: посилання приймаємо
+    -- тільки на того, хто справді в цій команді.
+    if found is not null and not exists (
+      select 1 from public.memberships m
+      where m.company_id = p_company and m.user_id = found
+    ) then
+      found := null;
     end if;
 
     insert into public.shared_payouts (project_id, company_id, user_id, name, role_title, amount, currency, note)

@@ -55,6 +55,7 @@ export function buildProjectPayload(state, projectId) {
         : null;
 
       return {
+        user_id: member?.userId || null,
         email: member?.email || null,
         name: member?.name || person.title,
         role_title: member?.role || null,
@@ -72,7 +73,9 @@ export function buildProjectPayload(state, projectId) {
  * Тому список таких людей показуємо ДО публікації, а не після.
  */
 export function unlinkedPayouts(payload) {
-  return (payload?.payouts ?? []).filter((entry) => !entry.email).map((entry) => entry.name);
+  return (payload?.payouts ?? [])
+    .filter((entry) => !entry.user_id && !entry.email)
+    .map((entry) => entry.name);
 }
 
 export async function publishProject(companyId, state, projectId) {

@@ -48,6 +48,9 @@ export function createCrew(input = {}) {
     // звʼязати гонорар у проєкті з її акаунтом, щоб вона побачила саме свій.
     // Без пошти людина в каталозі є, а гонорар для неї — просто рядок.
     email: text(input.email).toLowerCase(),
+    // Хто це у фірмі. Заповнюється, коли людину вибрали зі списку команди,
+    // і тоді гонорар звʼязується напряму — без здогадок за поштою.
+    userId: text(input.userId) || null,
     notes: text(input.notes),
     archived: Boolean(input.archived),
     createdAt: now,
