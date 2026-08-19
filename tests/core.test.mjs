@@ -21,6 +21,7 @@ import { taskOrder, projectPayouts, projectFinance } from '../src/core/selectors
 import { createTask, createProject } from '../src/core/models.js';
 import { formatMoney, currencySymbol, getCurrency, getLanguage, CURRENCIES, LANGUAGES } from '../src/core/locale.js';
 import { createEquipment, unitMargin } from '../src/core/equipment.js';
+import { makeSlug, isValidSlug, generateCode, roleLabel, canManage } from '../src/core/account.js';
 import { createCrew, crewLabel, clientRate, crewMargin } from '../src/core/crew.js';
 import {
   createEstimate, createItem, itemAmount, estimateTotals,
@@ -811,4 +812,34 @@ test('моделі: сміттєві дані не ламають створен
   assert.equal(project.status, 'lead', 'невідомий статус замінюється на типовий');
   assert.equal(project.deadline, null, 'некоректна дата стає null');
   assert.equal(project.fee, null, 'нечислова сума стає null');
+});
+
+test('фірма: коротке імʼя виходить читабельним і латиницею', () => {
+  assert.equal(makeSlug('DreamCut Film'), 'dreamcut-film');
+  assert.equal(makeSlug('Студія «Веста»'), 'studiia-vesta', 'кирилиця транслітерується');
+  assert.equal(makeSlug('  ---Кіно---  '), 'kino', 'дефіси по краях прибираються');
+  assert.equal(makeSlug('А'.repeat(60)).length, 40, 'довжина обмежена');
+
+  assert.ok(isValidSlug('dreamcut-film'));
+  assert.ok(!isValidSlug('Дрім'), 'кирилиця в адресі неприйнятна');
+  assert.ok(!isValidSlug('a'), 'одна літера — замало');
+  assert.ok(!isValidSlug('dream cut'), 'пробіли неприйнятні');
+});
+
+test('запрошення: код без символів, які плутають', () => {
+  const code = generateCode();
+  assert.match(code, /^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+  assert.ok(!/[O0I1]/.test(code), 'нуль і одиниця з літерами не плутаються');
+
+  const codes = new Set(Array.from({ length: 200 }, () => generateCode()));
+  assert.equal(codes.size, 200, 'коди не повторюються');
+});
+
+test('ролі: керувати можуть лише директор і адміністратор', () => {
+  assert.ok(canManage('owner'));
+  assert.ok(canManage('admin'));
+  assert.ok(!canManage('member'), 'команда людей не додає');
+  assert.ok(!canManage('вигадка'));
+  assert.equal(roleLabel('member'), 'Команда');
+  assert.equal(roleLabel('невідомо'), 'невідомо', 'невідому роль показуємо як є, а не ховаємо');
 });
