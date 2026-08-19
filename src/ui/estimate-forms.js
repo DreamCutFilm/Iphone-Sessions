@@ -16,6 +16,9 @@ import {
 import { createCrew, CREW_ROLES, crewLabel, clientRate } from '../core/crew.js';
 import { formatMoney, currencySymbol, CURRENCIES } from '../core/locale.js';
 import { navigate } from './router.js';
+import { chip } from './components.js';
+import { isSignedIn } from '../core/cloud.js';
+import { activeCompany, teamOf, roleLabel } from '../core/account.js';
 
 // --- Техніка --------------------------------------------------------------
 
@@ -117,17 +120,19 @@ export function editCrew(existing = null, defaults = {}) {
     oninput: (event) => { draft.role = event.target.value; },
   });
 
+  const nameInput = textInput({
+    value: draft.name,
+    placeholder: 'Хто саме',
+    oninput: (event) => { draft.name = event.target.value; },
+  });
+
   const body = formBody(
     field('Роль', roleInput),
     el('div.quick-picks', CREW_ROLES.map((role) => el('button.quick-pick', {
       type: 'button',
       onclick: () => { draft.role = role; roleInput.value = role; },
     }, role))),
-    field('Імʼя', textInput({
-      value: draft.name,
-      placeholder: 'Хто саме',
-      oninput: (event) => { draft.name = event.target.value; },
-    }), 'Можна лишити порожнім — тоді це просто роль, яку ще треба закрити.'),
+    field('Імʼя', nameInput, 'Можна лишити порожнім — тоді це просто роль, яку ще треба закрити.'),
     field(`Гонорар за зміну, ${symbol}`, numberInput({
       value: draft.fee ?? '',
       placeholder: '0',
@@ -144,14 +149,7 @@ export function editCrew(existing = null, defaults = {}) {
       placeholder: '+380…',
       oninput: (event) => { draft.phone = event.target.value; },
     })),
-    field('Пошта', textInput({
-      value: draft.email,
-      type: 'email',
-      inputmode: 'email',
-      autocapitalize: 'none',
-      placeholder: 'petro@example.com',
-      oninput: (event) => { draft.email = event.target.value; },
-    }), 'Та сама, якою людина заходить у застосунок. Без неї вона не побачить свій гонорар у спільному проєкті — база не знатиме, що гонорар її.'),
+    emailField(draft, () => nameInput, () => roleInput),
     field('Нотатка', textInput({
       value: draft.notes,
       placeholder: 'Своя камера, працює з дроном…',
@@ -185,6 +183,127 @@ export function editCrew(existing = null, defaults = {}) {
       }, 'Зберегти'),
     ],
   });
+}
+
+/**
+ * Пошта людини — з підказкою зі складу фірми.
+ *
+ * Пошту треба вписати рівно так, як людина нею заходить: жодної помилки
+ * застосунок не помітить, а гонорар просто мовчки не дійде. Тому головний
+ * шлях — вибрати зі списку своєї команди, а поле лишається на випадок,
+ * коли людини у фірмі ще немає.
+ *
+ * Список розкривається під полем, а не окремою панеллю: панель у застосунку
+ * одна, і друга закрила б цю форму разом із усім, що вже набрано.
+ */
+function emailField(draft, getNameInput, getRoleInput) {
+  const input = textInput({
+    value: draft.email,
+    type: 'email',
+    inputmode: 'email',
+    autocapitalize: 'none',
+    placeholder: 'вибери зі списку або впиши',
+    oninput: (event) => {
+      draft.email = event.target.value.trim().toLowerCase();
+      // Вписали руками — отже, попередній вибір зі списку більше не діє.
+      draft.userId = null;
+      render();
+    },
+    onfocus: () => { open = true; load(); render(); },
+  });
+
+  const list = el('div.team-pick');
+  const company = isSignedIn() ? activeCompany() : null;
+
+  let open = false;
+  let team = null;      // null — ще не питали
+  let failed = false;
+  let loading = false;
+
+  async function load() {
+    if (team !== null || loading || !company) return;
+    loading = true;
+    render();
+    try {
+      team = await teamOf(company.id);
+    } catch {
+      failed = true;
+    } finally {
+      loading = false;
+      render();
+    }
+  }
+
+  function choose(person) {
+    draft.email = person.email;
+    draft.userId = person.userId;
+    input.value = person.email;
+
+    // Порожні поля заповнюємо, заповнені не чіпаємо: людина могла навмисно
+    // написати «Андрій (друга камера)», і підміна це стерла б.
+    const nameInput = getNameInput();
+    if (!draft.name.trim() && person.name) {
+      draft.name = person.name;
+      nameInput.value = person.name;
+    }
+    const roleInput = getRoleInput();
+    if (!draft.role.trim() && person.title) {
+      draft.role = person.title;
+      roleInput.value = person.title;
+    }
+
+    open = false;
+    render();
+    toast(`${person.name || person.email} — гонорар дійде`);
+  }
+
+  function render() {
+    list.replaceChildren();
+
+    if (draft.userId) {
+      list.append(el('p.settings-note', '✓ Звʼязано з акаунтом у фірмі — гонорар дійде.'));
+      return;
+    }
+    if (!open || !company) return;
+
+    if (loading) { list.append(el('p.settings-note', 'Читаю склад фірми…')); return; }
+    if (failed) { list.append(el('p.settings-note', 'Не вдалося прочитати склад фірми. Впиши пошту руками.')); return; }
+    if (!team) return;
+
+    // Показуємо лише тих, у кого пошта справді є: інші нічим не допоможуть.
+    const typed = draft.email.trim().toLowerCase();
+    const found = team
+      .filter((person) => person.email)
+      .filter((person) => !typed
+        || person.email.includes(typed)
+        || person.name.toLowerCase().includes(typed));
+
+    if (!found.length) {
+      list.append(el('p.settings-note', team.length > 1
+        ? 'Серед своїх такого немає. Впиши пошту руками або запроси людину у фірму.'
+        : 'У фірмі поки нікого, крім тебе. Запроси людей — і вони зʼявляться тут списком.'));
+      return;
+    }
+
+    list.append(el('div.list', found.map((person) => el(
+      'article.row',
+      { onclick: () => choose(person) },
+      el('span.row-mark', person.isMe ? '🙋' : '👤'),
+      el('div.row-body',
+        el('p.row-title', person.name || person.email),
+        el('div.row-meta',
+          chip(person.title || roleLabel(person.role)),
+          chip(person.email))),
+    ))));
+  }
+
+  render();
+
+  return el('div',
+    field('Пошта', input, company
+      ? 'Натисни — і зʼявиться склад твоєї фірми. Саме за поштою людина побачить свій гонорар у спільному проєкті.'
+      : 'Та сама, якою людина заходить у застосунок. Без неї вона не побачить свій гонорар у спільному проєкті.'),
+    list);
 }
 
 // --- Кошторис -------------------------------------------------------------

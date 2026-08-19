@@ -918,3 +918,50 @@ test('спільний проєкт: заробіток рахується ли�
   const member = { fee: null, rental: 12000, other: 3000, payoutTotal: null, myPayout: 8000 };
   assert.equal(sharedProfit(member), null);
 });
+
+test('публікація: задачі й техніка їдуть у фірму разом із проєктом', () => {
+  const petro = createCrew({ name: 'Петро', role: 'Оператор', fee: 4000, email: 'petro@t' });
+  const camera = createEquipment({ title: 'Sony FX6', category: 'camera', ownership: 'own', dayRate: 3000, dayCost: 1000 });
+  const light = createEquipment({
+    title: 'Aputure 600d', category: 'light', ownership: 'rented',
+    dayRate: 1500, dayCost: 800, notes: 'Kinorent, Городоцька 20',
+  });
+
+  const project = createProject({ title: 'Концерт', notes: 'ТІЛЬКИ ДЛЯ СЕБЕ' });
+  const tasks = [
+    createTask({ title: 'Забрати світло', projectId: project.id, crewId: petro.id, notes: 'до 10:00' }),
+    createTask({ title: 'Узгодити план', projectId: project.id }),
+    createTask({ title: 'Чужа задача', projectId: 'prj_інший' }),
+  ];
+
+  const estimate = createEstimate({
+    projectId: project.id, status: 'approved', currency: 'UAH',
+    items: [
+      itemFromEquipment(camera, { quantity: 2, shifts: 1 }),
+      itemFromEquipment(light, { shifts: 1 }),
+      itemFromCrew(petro, { shifts: 1 }),
+    ],
+  });
+
+  const state = {
+    projects: [project], tasks, ideas: [], crew: [petro],
+    equipment: [camera, light], estimates: [estimate], settings: { currency: 'UAH' },
+  };
+
+  const { project: sent } = buildProjectPayload(state, project.id);
+
+  assert.equal(sent.tasks.length, 2, 'чужа задача у пакунок не потрапляє');
+  assert.equal(sent.tasks[0].email, 'petro@t', 'доручену людину впізнають за поштою');
+  assert.equal(sent.tasks[0].notes, 'до 10:00', 'нотатка задачі — це і є пояснення, як її зробити');
+  assert.equal(sent.tasks[1].email, null, 'нічия задача лишається спільною');
+
+  assert.equal(sent.items.length, 2, 'гонорари в техніку не потрапляють');
+  const rented = sent.items.find((item) => item.title === 'Aputure 600d');
+  assert.equal(rented.ownership, 'rented', 'видно, що по це треба їхати');
+  assert.equal(rented.notes, 'Kinorent, Городоцька 20', 'де взяти — з каталогу техніки');
+  assert.equal(rented.cost, 800, 'у техніці лише собівартість');
+
+  const own = sent.items.find((item) => item.title === 'Sony FX6');
+  assert.equal(own.cost, 2000, '2 камери × 1 зміна × 1000');
+  assert.ok(!('unit_price' in own), 'ціни для клієнта в техніці немає й бути не може');
+});

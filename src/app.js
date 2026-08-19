@@ -18,6 +18,7 @@ import { crewView } from './ui/views/crew.js';
 import { settingsView } from './ui/views/settings.js';
 import { accountView } from './ui/views/account.js';
 import { teamProjectsView } from './ui/views/team-projects.js';
+import { teamProjectView } from './ui/views/team-project.js';
 
 const TABS = [
   { path: '/overview', label: 'Огляд', mark: '◎' },
@@ -56,6 +57,7 @@ route('/calc/:tool', ({ tool }) => render(() => calcToolView(tool)));
 route('/settings', () => render(settingsView));
 route('/account', () => render(accountView));
 route('/team-projects', () => render(teamProjectsView));
+route('/team-projects/:id', ({ id }) => render(() => teamProjectView(id)));
 setNotFound(() => navigate('/overview', { replace: true }));
 
 function buildTabs(currentPath) {

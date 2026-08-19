@@ -7,7 +7,12 @@ import { getState } from '../../core/store.js';
 import {
   overdueTasks, todayTasks, upcomingTasks, somedayTasks, openTasks, projectById, taskOrder,
 } from '../../core/selectors.js';
-import { formatDate, daysUntil } from '../../core/dates.js';
+import { formatDate, daysUntil, describeDue } from '../../core/dates.js';
+import { chip, dueVariant } from '../components.js';
+import { navigate } from '../router.js';
+import { isSignedIn } from '../../core/cloud.js';
+import { activeCompany } from '../../core/account.js';
+import { myFirmTasks } from '../../core/sharing.js';
 
 // Фільтр живе поза перемальовуванням, щоб вибір не скидався при зміні даних.
 let activeFilter = 'open';
@@ -86,8 +91,59 @@ export function tasksView() {
       : emptyState('Ще нічого не закрито', 'Виконані задачі збираються тут.'));
   }
 
+  // Задачі фірми — у тому ж списку, не окремим світом. Для людини в команді
+  // це взагалі єдині задачі, які в неї є.
+  if (activeFilter !== 'done') page.append(firmTasksBlock());
+
   page.append(fab('Нова задача', () => editTask()));
   return page;
+}
+
+function firmTasksBlock() {
+  if (!isSignedIn()) return null;
+  const company = activeCompany();
+  if (!company) return null;
+
+  const host = el('div');
+
+  myFirmTasks(company.id)
+    .then((tasks) => {
+      if (!tasks.length) return;
+
+      // Свої — вгору. Спільні (нічиї) теж показуємо: часто це саме те,
+      // що ніхто ще не взяв.
+      const mine = tasks.filter((task) => task.isMine);
+      const shared = tasks.filter((task) => !task.isMine);
+
+      const rows = (list) => el('div.list', list.map((task) => el(
+        'article.row',
+        { onclick: () => navigate(`/team-projects/${task.projectId}`) },
+        el('span.row-mark', task.isMine ? '🙋' : '○'),
+        el('div.row-body',
+          el('p.row-title', task.title),
+          el('p.row-note', task.projectTitle),
+          el('div.row-meta',
+            task.due ? chip(describeDue(task.due), dueVariant(task.due)) : null,
+            task.priority === 'high' ? chip('терміново', 'danger') : null)),
+        el('span.card-chevron', '›'),
+      )));
+
+      const parts = [];
+      if (mine.length) {
+        parts.push(sectionTitle('Мої задачі у фірмі', el('span.section-hint', company.name)));
+        parts.push(rows(mine));
+      }
+      if (shared.length) {
+        parts.push(sectionTitle('Спільні у фірмі', el('span.section-hint', company.name)));
+        parts.push(rows(shared));
+      }
+      host.replaceChildren(...parts);
+    })
+    .catch(() => {
+      // Немає мережі — свої задачі на місці, і це головне.
+    });
+
+  return host;
 }
 
 export { taskOrder, formatDate };

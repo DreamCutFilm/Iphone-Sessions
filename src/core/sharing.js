@@ -10,7 +10,8 @@
 // найгірше, що може статися від помилки тут, — щось не покажеться.
 
 import { rpc } from './cloud.js';
-import { projectById, projectFinance, projectPayouts } from './selectors.js';
+import { projectById, projectFinance, projectPayouts, tasksOfProject, billingEstimates } from './selectors.js';
+import { itemCost, describeItemCount } from './estimates.js';
 
 /**
  * Що саме летить у фірму.
@@ -48,6 +49,8 @@ export function buildProjectPayload(state, projectId) {
       // Внутрішні нотатки проєкту назовні не йдуть узагалі: вони писалися
       // для себе, і команда в них не мала б опинитися несподівано.
       notes: null,
+      tasks: taskPayload(state, projectId),
+      items: itemPayload(state, projectId),
     },
     payouts: payouts.people.map((person) => {
       const member = person.crewId
@@ -55,6 +58,7 @@ export function buildProjectPayload(state, projectId) {
         : null;
 
       return {
+        user_id: member?.userId || null,
         email: member?.email || null,
         name: member?.name || person.title,
         role_title: member?.role || null,
@@ -72,7 +76,72 @@ export function buildProjectPayload(state, projectId) {
  * Тому список таких людей показуємо ДО публікації, а не після.
  */
 export function unlinkedPayouts(payload) {
-  return (payload?.payouts ?? []).filter((entry) => !entry.email).map((entry) => entry.name);
+  return (payload?.payouts ?? [])
+    .filter((entry) => !entry.user_id && !entry.email)
+    .map((entry) => entry.name);
+}
+
+/**
+ * Задачі проєкту — те, заради чого людина відкриває застосунок зранку.
+ *
+ * Нотатка задачі йде назовні, на відміну від нотатки проєкту. Різниця не
+ * випадкова: нотатка проєкту — це думки для себе, а нотатка задачі —
+ * це і є пояснення, ЯК її зробити, і без нього задача часто безглузда.
+ */
+function taskPayload(state, projectId) {
+  return tasksOfProject(state, projectId).map((task, index) => {
+    const member = task.crewId ? state.crew.find((entry) => entry.id === task.crewId) : null;
+
+    return {
+      local_id: task.id,
+      title: task.title,
+      user_id: member?.userId || null,
+      email: member?.email || null,
+      assignee_name: member?.name || member?.role || null,
+      due: task.due,
+      done: task.done,
+      priority: task.priority,
+      notes: task.notes || null,
+      position: index,
+    };
+  });
+}
+
+/**
+ * Техніка на зйомку: що везти й звідки брати.
+ *
+ * Гонорари сюди не потрапляють — вони їдуть окремо й показуються кожному
+ * лише його власний. А з грошей у техніці лишається сама собівартість:
+ * ціни для клієнта в цьому списку немає й бути не може.
+ */
+function itemPayload(state, projectId) {
+  const { estimates } = billingEstimates(state, projectId);
+  const rows = [];
+
+  for (const estimate of estimates) {
+    for (const item of estimate.items) {
+      if (item.category === 'crew' || item.crewId) continue;
+
+      const source = item.equipmentId
+        ? state.equipment.find((entry) => entry.id === item.equipmentId)
+        : null;
+
+      rows.push({
+        title: item.title,
+        category: item.category,
+        count_label: describeItemCount(item),
+        ownership: source?.ownership ?? null,
+        cost: itemCost(item),
+        currency: estimate.currency,
+        // Нотатка з каталогу — це найчастіше «що входить у комплект»
+        // і де його брати. Саме те, що треба людині на майданчику.
+        notes: item.notes || source?.notes || null,
+        position: rows.length,
+      });
+    }
+  }
+
+  return rows;
 }
 
 export async function publishProject(companyId, state, projectId) {
@@ -103,6 +172,49 @@ export async function projectPayoutRows(projectId) {
     role: row.role_title || '',
     amount: Number(row.amount) || 0,
     currency: row.currency,
+    isMine: Boolean(row.is_mine),
+  }));
+}
+
+export async function sharedTasks(projectId) {
+  const rows = await rpc('project_tasks', { p_project: projectId });
+  return (rows ?? []).map((row) => ({
+    id: row.id,
+    title: row.title,
+    assignee: row.assignee_name ?? '',
+    due: row.due,
+    done: Boolean(row.done),
+    priority: row.priority,
+    notes: row.notes ?? '',
+    isMine: Boolean(row.is_mine),
+  }));
+}
+
+export async function sharedItems(projectId) {
+  const rows = await rpc('project_items', { p_project: projectId });
+  return (rows ?? []).map((row) => ({
+    title: row.title,
+    category: row.category ?? '',
+    count: row.count_label ?? '',
+    ownership: row.ownership ?? '',
+    cost: Number(row.cost) || 0,
+    currency: row.currency,
+    notes: row.notes ?? '',
+  }));
+}
+
+/** Мої задачі по всій фірмі — для звичайного екрана задач. */
+export async function myFirmTasks(companyId) {
+  const rows = await rpc('my_company_tasks', { p_company: companyId });
+  return (rows ?? []).map((row) => ({
+    id: row.id,
+    title: row.title,
+    due: row.due,
+    done: Boolean(row.done),
+    priority: row.priority,
+    notes: row.notes ?? '',
+    projectId: row.project_id,
+    projectTitle: row.project_title,
     isMine: Boolean(row.is_mine),
   }));
 }

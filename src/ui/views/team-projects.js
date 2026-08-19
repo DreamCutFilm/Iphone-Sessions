@@ -10,7 +10,7 @@ import { pageHeader, sectionTitle, chip, dueVariant } from '../components.js';
 import { navigate } from '../router.js';
 import { isSignedIn } from '../../core/cloud.js';
 import { activeCompany } from '../../core/account.js';
-import { companyProjects, projectPayoutRows, sharedProfit } from '../../core/sharing.js';
+import { companyProjects, sharedProfit } from '../../core/sharing.js';
 import { statusLabel } from '../../core/models.js';
 import { formatMoney } from '../../core/locale.js';
 import { describeDue, plural } from '../../core/dates.js';
@@ -90,25 +90,17 @@ function projectCard(project) {
   if (project.shootDays.length) meta.push(chip(`🎥 ${plural(project.shootDays.length, 'зміна', 'зміни', 'змін')}`));
   if (project.location) meta.push(chip(`📍 ${project.location}`));
 
-  const payoutsHost = el('div');
-
   return el(
     'article.card',
+    { onclick: () => navigate(`/team-projects/${project.id}`) },
     el(
       'div.card-body',
       el('p.card-title', project.title),
       project.client && el('p.card-sub', project.client),
       el('div.row-meta', meta),
       moneyBlock(project),
-      payoutsHost,
-      el('button.link', {
-        type: 'button',
-        onclick: (event) => {
-          event.currentTarget.remove();
-          loadPayouts(payoutsHost, project);
-        },
-      }, 'Гонорари →'),
     ),
+    el('span.card-chevron', '›'),
   );
 }
 
@@ -138,30 +130,3 @@ function moneyBlock(project) {
   return rows;
 }
 
-async function loadPayouts(host, project) {
-  host.replaceChildren(el('p.settings-note', 'Завантажую…'));
-
-  let rows;
-  try {
-    rows = await projectPayoutRows(project.id);
-  } catch (error) {
-    host.replaceChildren(el('p.settings-note', error?.message ?? 'Не вдалося завантажити'));
-    return;
-  }
-
-  if (!rows.length) {
-    host.replaceChildren(el('p.settings-note', 'Гонорарів у цьому проєкті немає.'));
-    return;
-  }
-
-  host.replaceChildren(el('div.list', rows.map((row) => el(
-    'article.row',
-    el('span.row-mark', row.isMine ? '🙋' : '👤'),
-    el('div.row-body',
-      el('p.row-title', row.name),
-      el('div.row-meta',
-        row.role ? chip(row.role) : null,
-        chip(formatMoney(row.amount, row.currency), row.isMine ? 'money' : ''),
-        row.isMine ? chip('це ти') : null)),
-  ))));
-}

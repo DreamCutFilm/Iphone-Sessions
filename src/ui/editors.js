@@ -9,6 +9,7 @@ import { addItem, patchItem, removeItem, getState } from '../core/store.js';
 import { createProject, createTask, createIdea, PROJECT_STATUSES, PROJECT_STYLES, PRIORITIES } from '../core/models.js';
 import { toLocalInputValue, fromLocalInputValue, formatDate, todayISO, expandDateRange } from '../core/dates.js';
 import { currencySymbol } from '../core/locale.js';
+import { crewLabel } from '../core/crew.js';
 import { isValidCoordinate, formatCoordinates } from '../core/geo.js';
 import { openMapPicker } from './map-picker.js';
 import { navigate } from './router.js';
@@ -23,6 +24,16 @@ function projectOptions() {
     ...getState().projects
       .filter((project) => project.status !== 'archived')
       .map((project) => ({ value: project.id, label: project.title })),
+  ];
+}
+
+/** Кому можна доручити задачу: каталог команди. */
+function crewOptions() {
+  return [
+    { value: '', label: 'Спільна — для всіх' },
+    ...getState().crew
+      .filter((member) => !member.archived)
+      .map((member) => ({ value: member.id, label: crewLabel(member) })),
   ];
 }
 
@@ -46,6 +57,15 @@ export function editTask(existing = null, defaults = {}) {
         value: draft.projectId ?? '',
         onchange: (event) => { draft.projectId = event.target.value || null; },
       }),
+    ),
+    field(
+      'Кому',
+      selectInput(crewOptions(), {
+        value: draft.crewId ?? '',
+        onchange: (event) => { draft.crewId = event.target.value || null; },
+      }),
+      'Коли проєкт опублікований у фірмі, людина побачить цю задачу як свою. '
+      + 'Порожньо — задача спільна, її бачить уся команда.',
     ),
     field(
       'Термін',
