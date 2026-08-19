@@ -1,6 +1,7 @@
 // Точка збірки: маршрути, нижня панель вкладок, реакція на зміну даних.
 
-import { el, mount } from './ui/dom.js';
+import { el, mount, toast } from './ui/dom.js';
+import { completeGoogleSignIn } from './core/cloud.js';
 import { route, setNotFound, startRouter, navigate, setNavigationListener, rerender } from './ui/router.js';
 import { subscribe, saveNow } from './core/store.js';
 import { isSheetOpen, onSheetClosed } from './ui/sheet.js';
@@ -107,6 +108,21 @@ window.addEventListener('pagehide', saveNow);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') saveNow();
 });
+
+// Повернення від Google. Розібрати хвіст адреси треба ДО запуску маршрутів —
+// інакше застосунок спробує відкрити екран із назвою «access_token».
+// Виклик синхронно прибирає хвіст і лише потім іде в мережу по імʼя людини,
+// тож чекати на нього тут не можна й не потрібно.
+completeGoogleSignIn()
+  .then((result) => {
+    if (result !== 'signed-in') return;
+    toast('Вхід через Google виконано');
+    rerender();
+  })
+  .catch((error) => {
+    toast(error?.message ?? 'Не вдалося ввійти через Google', { error: true });
+    rerender();
+  });
 
 startRouter();
 startReminders();

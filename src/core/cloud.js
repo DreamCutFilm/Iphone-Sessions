@@ -52,16 +52,24 @@ export function isSignedIn() {
 async function call(path, { method = 'GET', body, headers = {}, auth = true } = {}) {
   const token = auth && session?.access_token ? session.access_token : SUPABASE_KEY;
 
-  const response = await fetch(`${SUPABASE_URL}${path}`, {
-    method,
-    headers: {
-      apikey: SUPABASE_KEY,
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      ...headers,
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let response;
+  try {
+    response = await fetch(`${SUPABASE_URL}${path}`, {
+      method,
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...headers,
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    // Мережа обірвалася — відповіді немає взагалі. Браузер каже про це
+    // англійською й по-своєму («Failed to fetch», «Load failed», «NetworkError»),
+    // тож не переказуємо його слова, а говоримо своїми.
+    throw new CloudError('Немає звʼязку з сервером. Перевір інтернет.', 0, null);
+  }
 
   const text = await response.text();
   const data = text ? safeParse(text) : null;
@@ -148,6 +156,74 @@ export async function signOut() {
     // Навіть якщо сервер не відповів — локально виходимо однаково.
   }
   setSession(null);
+}
+
+// --- Вхід через Google ------------------------------------------------------
+//
+// Тут немає жодного коду Google — і не має бути. Пароля користувача ми не
+// бачимо взагалі: браузер іде на сторінку Google, той питає людину, і назад
+// повертається вже готовий пропуск. Наша справа — відправити й зустріти.
+
+/** Адреса, куди Google поверне людину. Хеш відрізаємо: у ньому наші маршрути. */
+function returnAddress() {
+  return `${location.origin}${location.pathname}`;
+}
+
+export function googleSignInUrl() {
+  const params = new URLSearchParams({
+    provider: 'google',
+    redirect_to: returnAddress(),
+  });
+  return `${SUPABASE_URL}/auth/v1/authorize?${params}`;
+}
+
+/**
+ * Зустрічаємо людину після Google.
+ *
+ * Пропуск повертається в хвості адреси — там, де в нас живуть маршрути.
+ * Тому це треба розібрати ДО того, як застосунок почне читати адресу,
+ * інакше він спробує знайти екран із назвою «access_token».
+ *
+ * Повертає: 'signed-in' | 'error' | null (звичайний запуск, нічого робити).
+ */
+export async function completeGoogleSignIn() {
+  const raw = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
+  if (!raw.includes('access_token=') && !raw.includes('error=')) return null;
+
+  const params = new URLSearchParams(raw);
+  // Хвіст прибираємо одразу й назавжди: пропуск не має лишатися в адресному
+  // рядку, історії браузера чи в посиланні, яке людина комусь перешле.
+  history.replaceState(null, '', `${returnAddress()}#/account`);
+
+  if (params.get('error')) {
+    const description = params.get('error_description') ?? '';
+    throw new CloudError(
+      /access_denied/.test(params.get('error'))
+        ? 'Вхід через Google скасовано'
+        : description || 'Google не пустив',
+      400,
+      null,
+    );
+  }
+
+  const accessToken = params.get('access_token');
+  const refreshToken = params.get('refresh_token');
+  if (!accessToken) throw new CloudError('Google повернув порожню відповідь', 400, null);
+
+  // Хто саме зайшов, у відповіді немає — питаємо окремо, уже з пропуском.
+  const user = await call('/auth/v1/user', {
+    auth: false,
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  setSession({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+    expires_at: Math.floor(Date.now() / 1000) + Number(params.get('expires_in') ?? 3600),
+    user,
+  });
+
+  return 'signed-in';
 }
 
 export async function resetPassword(email) {

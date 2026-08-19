@@ -147,6 +147,17 @@ body.is-locked { overscroll-behavior: none; }
   text-transform: none; letter-spacing: 0; cursor: pointer;
 }
 
+/* «або» між двома способами входу — тонка лінія по боках, щоб слово
+   читалося як розділювач, а не як підпис до кнопки нижче. */
+.settings-note--divider {
+  display: flex; align-items: center; gap: 10px;
+  margin: 14px 0 10px; text-align: center;
+}
+.settings-note--divider::before,
+.settings-note--divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--line);
+}
+
 /* Код запрошення диктують уголос і переписують — тому моноширинний шрифт
    і розрядка: так «rn» не зливається в «m», а нуль не плутають з буквою. */
 .invite-code {

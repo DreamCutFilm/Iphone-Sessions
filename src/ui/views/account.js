@@ -12,7 +12,8 @@ import {
 } from '../sheet.js';
 import { navigate } from '../router.js';
 import {
-  isSignedIn, currentUser, signIn, signUp, signOut, resetPassword, CloudError,
+  isSignedIn, currentUser, signIn, signUp, signOut, resetPassword,
+  googleSignInUrl, CloudError,
 } from '../../core/cloud.js';
 import {
   myCompanies, createCompany, updateCompany, searchCompanies, requestJoin, myRequests,
@@ -85,6 +86,27 @@ function signedOutBlock() {
       'Без нього застосунок працює як і працював — усе лишається на цьому телефоні.'),
     el('button.btn.btn--primary.btn--wide', { type: 'button', onclick: () => authSheet('signup') }, 'Створити акаунт'),
     el('button.btn.btn--ghost.btn--wide', { type: 'button', onclick: () => authSheet('signin') }, 'Уже маю акаунт'),
+    googleButton(),
+  );
+}
+
+/**
+ * Вхід через Google.
+ *
+ * Кнопка веде геть із застосунку — на сторінку Google — і повертає назад уже
+ * з пропуском. У застосунку, встановленому на домашній екран, це на мить
+ * відкриє Safari: так влаштований сам Google, обійти не можна. Тому попереджаємо
+ * заздалегідь, аби людина не вирішила, що застосунок зламався.
+ */
+function googleButton() {
+  return el(
+    'div',
+    el('p.settings-note.settings-note--divider', 'або'),
+    el('button.btn.btn--ghost.btn--wide', {
+      type: 'button',
+      onclick: () => { window.location.href = googleSignInUrl(); },
+    }, 'Увійти через Google'),
+    el('p.settings-note', 'Відкриється сторінка Google і поверне тебе назад. Пароль лишається в Google — застосунок його не бачить.'),
   );
 }
 
