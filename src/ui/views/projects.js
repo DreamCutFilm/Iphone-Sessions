@@ -17,23 +17,26 @@ import { navigate } from '../router.js';
 import { confirmSheet } from '../sheet.js';
 import { isSignedIn } from '../../core/cloud.js';
 import { activeCompany, canManage } from '../../core/account.js';
-import { buildProjectPayload, unlinkedPayouts, publishProject, unpublishProject } from '../../core/sharing.js';
+import {
+  buildProjectPayload, unlinkedPayouts, publishProject, unpublishProject, companyProjects,
+} from '../../core/sharing.js';
 
 export function projectsView() {
   const state = getState();
   const page = el('div.page');
 
   page.append(pageHeader('Проєкти', {
-    subtitle: `${state.projects.length} усього`,
+    subtitle: `${state.projects.length} своїх`,
     action: el('button.icon-btn', { type: 'button', 'aria-label': 'Новий проєкт', onclick: () => editProject() }, '+'),
   }));
 
   if (!state.projects.length) {
     page.append(emptyState(
-      'Проєктів ще немає',
+      'Своїх проєктів ще немає',
       'Проєкт — це рамка для дедлайну, знімальних днів, задач та ідей.',
       el('button.btn.btn--primary', { type: 'button', onclick: () => editProject() }, 'Створити перший'),
     ));
+    page.append(firmProjectsBlock(state));
     return page;
   }
 
@@ -54,8 +57,58 @@ export function projectsView() {
     })));
   }
 
+  page.append(firmProjectsBlock(state));
   page.append(fab('Новий проєкт', () => editProject()));
   return page;
+}
+
+/**
+ * Проєкти фірми просто в списку проєктів.
+ *
+ * Для людини в команді це взагалі єдині проєкти, які в неї є: локально в неї
+ * порожньо. Тримати їх на окремому екрані означало б, що вона відкриває
+ * «Проєкти» і бачить «порожньо — створи перший», хоча завтра зйомка.
+ *
+ * Свої, вже опубліковані, сюди не потрапляють удруге: локальна картка
+ * повніша, і в ній є що редагувати.
+ */
+function firmProjectsBlock(state) {
+  if (!isSignedIn()) return null;
+  const company = activeCompany();
+  if (!company) return null;
+
+  const host = el('div');
+  const mine = new Set(state.projects.map((project) => project.id));
+
+  companyProjects(company.id)
+    .then((projects) => {
+      const others = projects.filter((project) => !mine.has(project.localId));
+      if (!others.length) return;
+
+      host.replaceChildren(
+        sectionTitle(company.name, el('span.section-hint', 'фірма')),
+        el('div.list', others.map((project) => el(
+          'article.card',
+          { onclick: () => navigate(`/team-projects/${project.id}`) },
+          el('div.card-body',
+            el('p.card-title', project.title),
+            project.client && el('p.card-sub', project.client),
+            el('div.row-meta', [
+              chip(statusLabel(project.status), `status-${project.status}`),
+              project.deadline ? chip(`⚑ ${describeDue(project.deadline)}`, dueVariant(project.deadline)) : null,
+              project.shootDays.length ? chip(`🎥 ${project.shootDays.length}`) : null,
+              project.myPayout > 0 ? chip(formatMoneyIn(project.myPayout, project.currency), 'money') : null,
+            ].filter(Boolean))),
+          el('span.card-chevron', '›'),
+        ))),
+      );
+    })
+    .catch(() => {
+      // Мережі немає — локальні проєкти від цього не постраждали,
+      // і сваритися посеред списку немає за що.
+    });
+
+  return host;
 }
 
 export function projectDetailView(projectId) {
@@ -82,7 +135,7 @@ export function projectDetailView(projectId) {
 
   const facts = [chip(statusLabel(project.status), `status-${project.status}`)];
   if (project.style) facts.push(chip(`🎬 ${project.style}`, 'project'));
-  if (project.deadline) facts.push(chip(`⚑ Здача ${formatDate(project.deadline)} · ${describeDue(project.deadline)}`, dueVariant(project.deadline)));
+  if (project.deadline) facts.push(chip(deadlineLabel(project.deadline), dueVariant(project.deadline)));
   if (project.location) facts.push(chip(`📍 ${project.location}`));
   if (typeof project.fee === 'number') facts.push(chip(`${formatMoney(project.fee)} · ${project.paid ? 'оплачено' : 'не оплачено'}`, project.paid ? '' : 'money'));
   page.append(el('div.facts', facts));
@@ -91,7 +144,9 @@ export function projectDetailView(projectId) {
   const navigation = mapsLink({
     latitude: project.latitude,
     longitude: project.longitude,
-    label: project.location || project.title,
+    // Назву проєкту як адресу не підставляємо: «Кліп для гурту» в Картах
+    // не знайдеться, а кнопка обіцяла б маршрут, якого немає.
+    label: project.location,
   });
   if (navigation) {
     page.append(el(
@@ -316,3 +371,10 @@ function moneyRow(label, value, variant = '') {
 }
 
 export { ACTIVE_STATUSES };
+
+/** «Здача 5 вересня» або «Здача 21 серпня · Післязавтра» — без повтору дати. */
+function deadlineLabel(deadline) {
+  const human = describeDue(deadline);
+  const date = formatDate(deadline);
+  return human === date ? `⚑ Здача ${date}` : `⚑ Здача ${date} · ${human}`;
+}

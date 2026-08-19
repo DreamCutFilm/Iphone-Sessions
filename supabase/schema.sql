@@ -680,6 +680,57 @@ begin
   on conflict do nothing;
 
   delete from public.shared_payouts where project_id = target;
+  delete from public.shared_tasks   where project_id = target;
+  delete from public.shared_items   where project_id = target;
+
+  -- Задачі. Доручену людину звʼязуємо так само, як гонорар: спершу прямим
+  -- посиланням, потім поштою — і тільки якщо вона справді у цій фірмі.
+  for entry in select * from jsonb_array_elements(coalesce(p_project -> 'tasks', '[]'::jsonb))
+  loop
+    found := nullif(entry ->> 'user_id', '')::uuid;
+
+    if found is null and nullif(trim(coalesce(entry ->> 'email', '')), '') is not null then
+      select u.id into found from auth.users u
+      where lower(u.email) = lower(trim(entry ->> 'email')) limit 1;
+    end if;
+
+    if found is not null and not exists (
+      select 1 from public.memberships m
+      where m.company_id = p_company and m.user_id = found
+    ) then
+      found := null;
+    end if;
+
+    insert into public.shared_tasks
+      (project_id, company_id, local_id, title, assignee_id, assignee_name, due, done, priority, notes, position)
+    values (
+      target, p_company,
+      nullif(entry ->> 'local_id', ''),
+      coalesce(nullif(trim(entry ->> 'title'), ''), 'Без назви'),
+      found,
+      nullif(trim(coalesce(entry ->> 'assignee_name', '')), ''),
+      (entry ->> 'due')::date,
+      coalesce((entry ->> 'done')::boolean, false),
+      coalesce(entry ->> 'priority', 'normal'),
+      nullif(trim(coalesce(entry ->> 'notes', '')), ''),
+      coalesce((entry ->> 'position')::integer, 0)
+    );
+  end loop;
+
+  -- Техніка. Ціни клієнту тут немає й бути не може: кладемо лише собівартість.
+  insert into public.shared_items
+    (project_id, company_id, title, category, count_label, ownership, cost, currency, notes, position)
+  select
+    target, p_company,
+    coalesce(nullif(trim(item ->> 'title'), ''), 'Позиція'),
+    nullif(item ->> 'category', ''),
+    nullif(item ->> 'count_label', ''),
+    nullif(item ->> 'ownership', ''),
+    coalesce((item ->> 'cost')::numeric, 0),
+    coalesce(item ->> 'currency', 'UAH'),
+    nullif(trim(coalesce(item ->> 'notes', '')), ''),
+    coalesce((item ->> 'position')::integer, 0)
+  from jsonb_array_elements(coalesce(p_project -> 'items', '[]'::jsonb)) as item;
 
   for entry in select * from jsonb_array_elements(coalesce(p_payouts, '[]'::jsonb))
   loop
@@ -737,6 +788,73 @@ begin
   return true;
 end;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- 9в. Задачі й техніка проєкту
+-- ---------------------------------------------------------------------------
+-- Без цього спільний проєкт лишався б оголошенням: «буде зйомка, ось дата».
+-- Людині, яка їде на майданчик, треба знати ЩО робити і ЩО везти — і саме це
+-- має відкриватися в застосунку, а не приходити голосовим у месенджері.
+--
+-- Ціни клієнту тут немає взагалі: у техніці зберігається лише собівартість —
+-- те, у скільки оренда обходиться фірмі. Це те, що команді видно за правилом.
+
+create table if not exists public.shared_tasks (
+  id           uuid primary key default gen_random_uuid(),
+  project_id   uuid not null references public.shared_projects on delete cascade,
+  company_id   uuid not null references public.companies on delete cascade,
+  local_id     text,
+  title        text not null,
+  -- Кому доручено. Порожньо — задача спільна, її бачать усі як спільну.
+  assignee_id  uuid references public.profiles (id) on delete set null,
+  assignee_name text,
+  due          date,
+  done         boolean not null default false,
+  priority     text not null default 'normal',
+  notes        text,
+  position     integer not null default 0
+);
+
+create index if not exists shared_tasks_project_idx on public.shared_tasks (project_id);
+create index if not exists shared_tasks_assignee_idx on public.shared_tasks (assignee_id);
+
+create table if not exists public.shared_items (
+  id          uuid primary key default gen_random_uuid(),
+  project_id  uuid not null references public.shared_projects on delete cascade,
+  company_id  uuid not null references public.companies on delete cascade,
+  title       text not null,
+  category    text,
+  count_label text,
+  -- Своя чи орендована. Для людини на майданчику це головне питання:
+  -- зі складу забрати чи їхати в рентал.
+  ownership   text,
+  cost        numeric(14, 2) not null default 0,
+  currency    text not null default 'UAH',
+  notes       text,
+  position    integer not null default 0
+);
+
+create index if not exists shared_items_project_idx on public.shared_items (project_id);
+
+alter table public.shared_tasks enable row level security;
+alter table public.shared_items enable row level security;
+
+-- Задачі й техніку бачить уся команда: це робота, а не гроші.
+drop policy if exists shared_tasks_select on public.shared_tasks;
+create policy shared_tasks_select on public.shared_tasks for select
+  using (public.is_member(company_id));
+
+drop policy if exists shared_tasks_write on public.shared_tasks;
+create policy shared_tasks_write on public.shared_tasks for all
+  using (public.is_manager(company_id)) with check (public.is_manager(company_id));
+
+drop policy if exists shared_items_select on public.shared_items;
+create policy shared_items_select on public.shared_items for select
+  using (public.is_member(company_id));
+
+drop policy if exists shared_items_write on public.shared_items;
+create policy shared_items_write on public.shared_items for all
+  using (public.is_manager(company_id)) with check (public.is_manager(company_id));
 
 -- ---------------------------------------------------------------------------
 -- 9б. Що людина бачить
@@ -816,7 +934,7 @@ security definer
 stable
 set search_path = public
 as $$
-  select sp.name, sp.role_title, sp.amount, sp.currency, sp.user_id = auth.uid()
+  select sp.name, sp.role_title, sp.amount, sp.currency, coalesce(sp.user_id = auth.uid(), false)
   from public.shared_payouts sp
   join public.shared_projects p on p.id = sp.project_id
   where sp.project_id = p_project
@@ -825,7 +943,70 @@ as $$
   order by sp.amount desc;
 $$;
 
+-- Задачі проєкту. Бачить уся команда — з позначкою, що доручено саме тобі.
+create or replace function public.project_tasks(p_project uuid)
+returns table (
+  id uuid, title text, assignee_name text, due date, done boolean,
+  priority text, notes text, is_mine boolean
+)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select t.id, t.title, t.assignee_name, t.due, t.done, t.priority, t.notes,
+         coalesce(t.assignee_id = auth.uid(), false)
+  from public.shared_tasks t
+  join public.shared_projects p on p.id = t.project_id
+  where t.project_id = p_project and public.is_member(p.company_id)
+  order by t.done, t.due nulls last, t.position;
+$$;
+
+-- Техніка проєкту: що везти й звідки брати.
+create or replace function public.project_items(p_project uuid)
+returns table (
+  title text, category text, count_label text, ownership text,
+  cost numeric, currency text, notes text
+)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select i.title, i.category, i.count_label, i.ownership, i.cost, i.currency, i.notes
+  from public.shared_items i
+  join public.shared_projects p on p.id = i.project_id
+  where i.project_id = p_project and public.is_member(p.company_id)
+  order by i.position;
+$$;
+
+-- Мої задачі по всій фірмі — щоб не заходити в кожен проєкт окремо.
+create or replace function public.my_company_tasks(p_company uuid)
+returns table (
+  id uuid, title text, due date, done boolean, priority text, notes text,
+  project_id uuid, project_title text, is_mine boolean
+)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select t.id, t.title, t.due, t.done, t.priority, t.notes,
+         p.id, p.title, coalesce(t.assignee_id = auth.uid(), false)
+  from public.shared_tasks t
+  join public.shared_projects p on p.id = t.project_id
+  where p.company_id = p_company
+    and public.is_member(p.company_id)
+    and not t.done
+    -- Керівник бачить усі задачі фірми, решта — свої та спільні (нічиї).
+    and (public.is_manager(p.company_id) or t.assignee_id = auth.uid() or t.assignee_id is null)
+  order by coalesce(t.assignee_id = auth.uid(), false) desc, t.due nulls last, t.position;
+$$;
+
 grant execute on function public.publish_project(uuid, jsonb, jsonb) to authenticated;
+grant execute on function public.project_tasks(uuid) to authenticated;
+grant execute on function public.project_items(uuid) to authenticated;
+grant execute on function public.my_company_tasks(uuid) to authenticated;
 grant execute on function public.unpublish_project(uuid, text) to authenticated;
 grant execute on function public.company_projects(uuid) to authenticated;
 grant execute on function public.project_payouts(uuid) to authenticated;

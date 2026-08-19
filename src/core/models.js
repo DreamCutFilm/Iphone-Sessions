@@ -104,6 +104,9 @@ export function createTask(input = {}) {
     id: newId('tsk'),
     title: text(input.title) || 'Без назви',
     projectId: text(input.projectId) || null,
+    // Кому доручено — посилання на картку в каталозі команди. Порожньо
+    // означає «спільна»: таку задачу у фірмі бачать усі як нічию.
+    crewId: text(input.crewId) || null,
     due: dateOnly(input.due),
     // Момент нагадування (повна дата з часом). Якщо порожньо — нагадування нема.
     remindAt: isoOrNull(input.remindAt),
