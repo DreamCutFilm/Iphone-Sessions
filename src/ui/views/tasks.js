@@ -1,6 +1,6 @@
 // Задачі та нагадування — усе, що має термін.
 
-import { el, emptyState } from '../dom.js';
+import { el, emptyState, appendIf } from '../dom.js';
 import { pageHeader, sectionTitle, taskRow, fab } from '../components.js';
 import { editTask } from '../editors.js';
 import { getState } from '../../core/store.js';
@@ -93,7 +93,7 @@ export function tasksView() {
 
   // Задачі фірми — у тому ж списку, не окремим світом. Для людини в команді
   // це взагалі єдині задачі, які в неї є.
-  if (activeFilter !== 'done') page.append(firmTasksBlock());
+  if (activeFilter !== 'done') appendIf(page, firmTasksBlock());
 
   page.append(fab('Нова задача', () => editTask()));
   return page;

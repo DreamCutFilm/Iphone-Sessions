@@ -1,6 +1,6 @@
 // Проєкти: список за стадіями та картка окремого проєкту.
 
-import { el, emptyState, toast } from '../dom.js';
+import { el, emptyState, toast, appendIf } from '../dom.js';
 import { pageHeader, sectionTitle, projectCard, taskRow, chip, fab, dueVariant, formatMoney } from '../components.js';
 import { editProject, editTask } from '../editors.js';
 import { editEstimate } from '../estimate-forms.js';
@@ -36,7 +36,7 @@ export function projectsView() {
       'Проєкт — це рамка для дедлайну, знімальних днів, задач та ідей.',
       el('button.btn.btn--primary', { type: 'button', onclick: () => editProject() }, 'Створити перший'),
     ));
-    page.append(firmProjectsBlock(state));
+    appendIf(page, firmProjectsBlock(state));
     return page;
   }
 
@@ -57,7 +57,7 @@ export function projectsView() {
     })));
   }
 
-  page.append(firmProjectsBlock(state));
+  appendIf(page, firmProjectsBlock(state));
   page.append(fab('Новий проєкт', () => editProject()));
   return page;
 }

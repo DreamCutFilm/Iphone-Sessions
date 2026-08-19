@@ -1,7 +1,7 @@
 // Екран огляду — те, що оператор бачить, відкривши застосунок на бігу.
 // Спочатку прострочене, потім сьогоднішнє, потім найближчі дні.
 
-import { el, emptyState } from '../dom.js';
+import { el, emptyState, appendIf } from '../dom.js';
 import { pageHeader, sectionTitle, taskRow, statTile, agendaDay, fab, formatMoney } from '../components.js';
 import { isSignedIn } from '../../core/cloud.js';
 import { activeCompany } from '../../core/account.js';
@@ -106,7 +106,7 @@ export function overviewView() {
     ));
   }
 
-  page.append(firmBlock({ emptyHere }));
+  appendIf(page, firmBlock({ emptyHere }));
 
   page.append(fab('Нова задача', quickTask));
   return page;
