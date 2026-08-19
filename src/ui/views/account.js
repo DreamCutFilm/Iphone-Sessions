@@ -19,7 +19,7 @@ import {
   myCompanies, createCompany, updateCompany, searchCompanies, requestJoin, myRequests,
   teamOf, pendingRequests, approveRequest, declineRequest, changeRole, removeMember,
   createInvite, activeInvites, revokeInvite, redeemInvite,
-  makeSlug, isValidSlug, roleLabel, canManage, ROLES,
+  makeSlug, isValidSlug, roleLabel, canManage, setActiveCompany, ROLES,
 } from '../../core/account.js';
 
 /** Обгортка навколо мережевої дії: показує помилку людською мовою. */
@@ -67,6 +67,7 @@ export function accountView() {
         confirmLabel: 'Вийти',
         onConfirm: async () => {
           await signOut();
+          setActiveCompany(null);
           toast('Ти вийшов');
           navigate('/account');
         },
@@ -203,6 +204,7 @@ async function loadCompanies(host) {
   }
 
   if (!companies.length) {
+    setActiveCompany(null);
     const requests = (await run(() => myRequests())) ?? [];
     const waiting = requests.filter((request) => request.status === 'pending');
 
@@ -224,6 +226,9 @@ async function loadCompanies(host) {
     );
     return;
   }
+
+  // Перша фірма стає поточною: саме з нею працюватиме екран проєктів.
+  setActiveCompany(companies[0]);
 
   host.replaceChildren();
   for (const company of companies) {

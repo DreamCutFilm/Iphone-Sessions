@@ -1,6 +1,6 @@
 // Проєкти: список за стадіями та картка окремого проєкту.
 
-import { el, emptyState } from '../dom.js';
+import { el, emptyState, toast } from '../dom.js';
 import { pageHeader, sectionTitle, projectCard, taskRow, chip, fab, dueVariant, formatMoney } from '../components.js';
 import { editProject, editTask } from '../editors.js';
 import { editEstimate } from '../estimate-forms.js';
@@ -14,6 +14,10 @@ import { PROJECT_STATUSES, ACTIVE_STATUSES, statusLabel } from '../../core/model
 import { formatDate, describeDue, weekdayShort, daysUntil } from '../../core/dates.js';
 import { mapsLink, isValidCoordinate, formatCoordinates } from '../../core/geo.js';
 import { navigate } from '../router.js';
+import { confirmSheet } from '../sheet.js';
+import { isSignedIn } from '../../core/cloud.js';
+import { activeCompany, canManage } from '../../core/account.js';
+import { buildProjectPayload, unlinkedPayouts, publishProject, unpublishProject } from '../../core/sharing.js';
 
 export function projectsView() {
   const state = getState();
@@ -203,6 +207,12 @@ export function projectDetailView(projectId) {
       'Це те, що ти виплачуєш команді. Суми беруться з кошторисів проєкту, тож розійтися з ними не можуть.'));
   }
 
+  const sharing = sharingBlock(state, project);
+  if (sharing) {
+    page.append(sectionTitle('Фірма'));
+    page.append(sharing);
+  }
+
   if (ideas.length) {
     page.append(sectionTitle('Ідеї', el('button.link', { type: 'button', onclick: () => navigate('/ideas') }, 'усі')));
     page.append(el('div.list', ideas.slice(0, 5).map((idea) => el(
@@ -214,6 +224,88 @@ export function projectDetailView(projectId) {
 
   page.append(fab('Нова задача', () => editTask(null, { projectId: project.id })));
   return page;
+}
+
+/**
+ * Публікація проєкту у фірму.
+ *
+ * Свідомо ручна дія, а не автоматична синхронізація. Проєкт у роботі змінюється
+ * щогодини — половина сум чорнові, людей ще не підтверджено. Автоматичне
+ * вивантаження показувало б команді ці чернетки як факт, і кожна правка ставала б
+ * оголошенням. Тому команда бачить проєкт тоді, коли ти сам вирішив його показати.
+ */
+function sharingBlock(state, project) {
+  if (!isSignedIn()) return null;
+
+  const company = activeCompany();
+  if (!company) return null;
+
+  if (!canManage(company.role)) {
+    return el('p.settings-note',
+      `Ти в команді «${company.name}». Публікувати проєкти може директор або адміністратор.`);
+  }
+
+  const payload = buildProjectPayload(state, project.id);
+  const unlinked = unlinkedPayouts(payload);
+
+  const block = el('div.form');
+
+  block.append(el('button.btn.btn--primary.btn--wide', {
+    type: 'button',
+    onclick: async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      button.textContent = 'Публікую…';
+      try {
+        await publishProject(company.id, getState(), project.id);
+        toast(`Опубліковано у «${company.name}»`);
+      } catch (error) {
+        toast(error?.message ?? 'Немає звʼязку з сервером', { error: true });
+      } finally {
+        button.disabled = false;
+        button.textContent = '↑ Опублікувати у фірмі';
+      }
+    },
+  }, '↑ Опублікувати у фірмі'));
+
+  block.append(el('p.settings-note',
+    'Команда побачить зйомку, дати, локацію й оренду техніки. Суму клієнта й загальні '
+    + 'гонорари бачиш тільки ти та адміністратори — сервер не віддає їх решті. '
+    + 'Кожен бачить свій гонорар.'));
+
+  // Гонорар без пошти нікому не належить: людина відкриє застосунок і не побачить
+  // нічого. Мовчати про це не можна — помилку помітили б лише через тиждень.
+  if (unlinked.length) {
+    block.append(el('p.settings-note',
+      `⚠ Не побачать свій гонорар, бо в картці немає пошти: ${unlinked.join(', ')}. `
+      + 'Впиши пошту в каталозі команди — ту саму, якою людина заходить у застосунок.'));
+    block.append(el('button.btn.btn--ghost.btn--wide', {
+      type: 'button', onclick: () => navigate('/crew'),
+    }, 'До каталогу команди'));
+  }
+
+  block.append(el('button.btn.btn--ghost.btn--wide', {
+    type: 'button', onclick: () => navigate('/team-projects'),
+  }, 'Проєкти фірми'));
+
+  block.append(el('button.btn.btn--danger.btn--wide', {
+    type: 'button',
+    onclick: () => confirmSheet({
+      title: 'Прибрати з фірми?',
+      message: 'Проєкт зникне у команди. На цьому телефоні він залишиться недоторканим.',
+      confirmLabel: 'Прибрати',
+      onConfirm: async () => {
+        try {
+          await unpublishProject(company.id, project.id);
+          toast('Прибрано з фірми');
+        } catch (error) {
+          toast(error?.message ?? 'Немає звʼязку з сервером', { error: true });
+        }
+      },
+    }),
+  }, 'Прибрати з фірми'));
+
+  return block;
 }
 
 /** Рядок підсумку в блоці грошей. */

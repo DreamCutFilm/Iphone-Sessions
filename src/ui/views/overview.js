@@ -3,6 +3,8 @@
 
 import { el, emptyState } from '../dom.js';
 import { pageHeader, sectionTitle, taskRow, statTile, agendaDay, fab, formatMoney } from '../components.js';
+import { isSignedIn } from '../../core/cloud.js';
+import { activeCompany } from '../../core/account.js';
 import { editTask, quickTask } from '../editors.js';
 import { navigate } from '../router.js';
 import { getState } from '../../core/store.js';
@@ -98,6 +100,22 @@ export function overviewView() {
       'Створи перший проєкт, і задачі, дедлайни та знімальні дні зберуться навколо нього.',
       el('button.btn.btn--primary', { type: 'button', onclick: () => navigate('/projects') }, 'До проєктів'),
     ));
+  }
+
+  // Вхід до спільних проєктів — тільки якщо фірма справді є. Порожній пункт
+  // меню, який щоразу веде в «спершу увійди», лише заважає.
+  const company = isSignedIn() ? activeCompany() : null;
+  if (company) {
+    page.append(sectionTitle('Фірма'));
+    page.append(el('div.list', el(
+      'article.row',
+      { onclick: () => navigate('/team-projects') },
+      el('span.row-mark', '👥'),
+      el('div.row-body',
+        el('p.row-title', company.name),
+        el('p.row-note', 'Спільні проєкти команди')),
+      el('span.card-chevron', '›'),
+    )));
   }
 
   page.append(fab('Нова задача', quickTask));

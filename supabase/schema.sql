@@ -465,3 +465,329 @@ grant execute on function public.create_company(text, text, text, text, boolean)
 grant execute on function public.redeem_invite(text) to authenticated;
 grant execute on function public.approve_join_request(uuid, text) to authenticated;
 grant execute on function public.search_companies(text) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 9. Спільні проєкти
+-- ---------------------------------------------------------------------------
+-- Головне правило всієї цієї частини, словами замовника:
+--
+--   «Суму, яку я даю клієнту, команда не бачить. Тільки директор і
+--    адміністратори. Команда бачить тільки скільки оренда техніки в ренталі,
+--    та кожен бачить свій гонорар з проекту.»
+--
+-- Це правило реалізоване не в застосунку, а тут. Різниця принципова: помилка
+-- в інтерфейсі показала б зайве число на екрані; помилка тут — єдине, що
+-- справді відкрило б чужі гроші. Тому рядовий учасник не має права читати
+-- таблицю проєктів взагалі — навіть ту колонку, яку йому «можна». Усе, що він
+-- бачить, приходить через функцію, яка сама вирішує, що покласти у відповідь.
+
+create table if not exists public.shared_projects (
+  id            uuid primary key default gen_random_uuid(),
+  company_id    uuid not null references public.companies on delete cascade,
+  -- Той самий проєкт на телефоні директора. За цим полем публікація
+  -- впізнає, що це не новий проєкт, а оновлення вже опублікованого.
+  local_id      text not null,
+  title         text not null,
+  client        text,
+  style         text,
+  status        text not null default 'lead',
+  deadline      date,
+  location      text,
+  latitude      double precision,
+  longitude     double precision,
+  currency      text not null default 'UAH',
+  -- Скільки платить клієнт. Найчутливіше число в усій базі.
+  fee           numeric(14, 2),
+  -- Оренда техніки. Це команда бачить: вона працює з цією технікою.
+  rental_cost   numeric(14, 2) not null default 0,
+  -- Решта витрат, крім оренди й гонорарів: логістика, харчування.
+  other_cost    numeric(14, 2) not null default 0,
+  -- Сума всіх гонорарів. Теж чутлива: знаючи її та свій гонорар,
+  -- людина порахувала б чужі.
+  payout_total  numeric(14, 2) not null default 0,
+  notes         text,
+  published_by  uuid references public.profiles (id) on delete set null,
+  published_at  timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  unique (company_id, local_id)
+);
+
+create index if not exists shared_projects_company_idx
+  on public.shared_projects (company_id, deadline);
+
+create table if not exists public.shared_shoot_days (
+  project_id  uuid not null references public.shared_projects on delete cascade,
+  day         date not null,
+  primary key (project_id, day)
+);
+
+-- Гонорари. Один рядок — одна людина на одному проєкті.
+create table if not exists public.shared_payouts (
+  id          uuid primary key default gen_random_uuid(),
+  project_id  uuid not null references public.shared_projects on delete cascade,
+  company_id  uuid not null references public.companies on delete cascade,
+  -- Кому платимо. Заповнюється, коли людина вже має акаунт у фірмі —
+  -- саме за цим полем вона побачить свій гонорар. Порожньо — людина ще
+  -- не зареєстрована, гонорар видно лише керівникам.
+  user_id     uuid references public.profiles (id) on delete set null,
+  name        text,
+  role_title  text,
+  amount      numeric(14, 2) not null default 0,
+  currency    text not null default 'UAH',
+  note        text
+);
+
+create index if not exists shared_payouts_user_idx on public.shared_payouts (user_id);
+create index if not exists shared_payouts_project_idx on public.shared_payouts (project_id);
+
+alter table public.shared_projects   enable row level security;
+alter table public.shared_shoot_days enable row level security;
+alter table public.shared_payouts    enable row level security;
+
+-- Проєкти: читають і пишуть ЛИШЕ керівники. Для команди дороги сюди немає —
+-- вона ходить через функцію company_projects нижче.
+drop policy if exists shared_projects_all on public.shared_projects;
+create policy shared_projects_all on public.shared_projects for all
+  using (public.is_manager(company_id)) with check (public.is_manager(company_id));
+
+drop policy if exists shared_shoot_days_all on public.shared_shoot_days;
+create policy shared_shoot_days_all on public.shared_shoot_days for all
+  using (exists (
+    select 1 from public.shared_projects p
+    where p.id = project_id and public.is_manager(p.company_id)
+  ))
+  with check (exists (
+    select 1 from public.shared_projects p
+    where p.id = project_id and public.is_manager(p.company_id)
+  ));
+
+-- Гонорари: керівник бачить усі, людина — тільки свій власний рядок.
+drop policy if exists shared_payouts_select on public.shared_payouts;
+create policy shared_payouts_select on public.shared_payouts for select
+  using (public.is_manager(company_id) or user_id = auth.uid());
+
+drop policy if exists shared_payouts_write on public.shared_payouts;
+create policy shared_payouts_write on public.shared_payouts for all
+  using (public.is_manager(company_id)) with check (public.is_manager(company_id));
+
+-- ---------------------------------------------------------------------------
+-- 9а. Публікація проєкту у фірму
+-- ---------------------------------------------------------------------------
+-- Проєкт, знімальні дні й гонорари мають лягти разом або не лягти зовсім.
+-- Якби це були три запити з телефону, обрив звʼязку між другим і третім
+-- лишив би проєкт із гонорарами від минулого разу — тобто з неправдивими
+-- сумами, які виглядають правдивими.
+--
+-- Гонорар звʼязується з людиною за поштою: на телефоні в картці людини
+-- записана пошта, тут вона перетворюється на посилання на акаунт. Без цього
+-- людина не побачила б свій гонорар, бо база не знала б, що він її.
+
+create or replace function public.publish_project(
+  p_company uuid,
+  p_project jsonb,
+  p_payouts jsonb default '[]'::jsonb
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target uuid;
+  entry  jsonb;
+  found  uuid;
+begin
+  if not public.is_manager(p_company) then
+    raise exception 'Публікувати проєкти може директор або адміністратор';
+  end if;
+
+  insert into public.shared_projects as sp (
+    company_id, local_id, title, client, style, status, deadline,
+    location, latitude, longitude, currency, fee,
+    rental_cost, other_cost, payout_total, notes, published_by, updated_at
+  )
+  values (
+    p_company,
+    p_project ->> 'local_id',
+    coalesce(nullif(trim(p_project ->> 'title'), ''), 'Без назви'),
+    nullif(trim(coalesce(p_project ->> 'client', '')), ''),
+    nullif(trim(coalesce(p_project ->> 'style', '')), ''),
+    coalesce(p_project ->> 'status', 'lead'),
+    (p_project ->> 'deadline')::date,
+    nullif(trim(coalesce(p_project ->> 'location', '')), ''),
+    (p_project ->> 'latitude')::double precision,
+    (p_project ->> 'longitude')::double precision,
+    coalesce(p_project ->> 'currency', 'UAH'),
+    (p_project ->> 'fee')::numeric,
+    coalesce((p_project ->> 'rental_cost')::numeric, 0),
+    coalesce((p_project ->> 'other_cost')::numeric, 0),
+    coalesce((p_project ->> 'payout_total')::numeric, 0),
+    nullif(trim(coalesce(p_project ->> 'notes', '')), ''),
+    auth.uid(),
+    now()
+  )
+  on conflict (company_id, local_id) do update set
+    title        = excluded.title,
+    client       = excluded.client,
+    style        = excluded.style,
+    status       = excluded.status,
+    deadline     = excluded.deadline,
+    location     = excluded.location,
+    latitude     = excluded.latitude,
+    longitude    = excluded.longitude,
+    currency     = excluded.currency,
+    fee          = excluded.fee,
+    rental_cost  = excluded.rental_cost,
+    other_cost   = excluded.other_cost,
+    payout_total = excluded.payout_total,
+    notes        = excluded.notes,
+    published_by = excluded.published_by,
+    updated_at   = now()
+  returning sp.id into target;
+
+  -- Дні й гонорари переписуємо цілком: часткове оновлення лишило б рядки
+  -- від позицій, які з кошторису вже прибрали.
+  delete from public.shared_shoot_days where project_id = target;
+  insert into public.shared_shoot_days (project_id, day)
+  select target, value::date
+  from jsonb_array_elements_text(coalesce(p_project -> 'shoot_days', '[]'::jsonb))
+  on conflict do nothing;
+
+  delete from public.shared_payouts where project_id = target;
+
+  for entry in select * from jsonb_array_elements(coalesce(p_payouts, '[]'::jsonb))
+  loop
+    found := null;
+    if nullif(trim(coalesce(entry ->> 'email', '')), '') is not null then
+      select u.id into found
+      from auth.users u
+      where lower(u.email) = lower(trim(entry ->> 'email'))
+      limit 1;
+    end if;
+
+    insert into public.shared_payouts (project_id, company_id, user_id, name, role_title, amount, currency, note)
+    values (
+      target,
+      p_company,
+      found,
+      nullif(trim(coalesce(entry ->> 'name', '')), ''),
+      nullif(trim(coalesce(entry ->> 'role_title', '')), ''),
+      coalesce((entry ->> 'amount')::numeric, 0),
+      coalesce(entry ->> 'currency', 'UAH'),
+      nullif(trim(coalesce(entry ->> 'note', '')), '')
+    );
+  end loop;
+
+  return target;
+end;
+$$;
+
+create or replace function public.unpublish_project(p_company uuid, p_local_id text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_manager(p_company) then
+    raise exception 'Прибрати проєкт може директор або адміністратор';
+  end if;
+
+  delete from public.shared_projects
+  where company_id = p_company and local_id = p_local_id;
+
+  return true;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 9б. Що людина бачить
+-- ---------------------------------------------------------------------------
+-- Єдиний вхід для читання проєктів. Керівникові віддає все, рядовому —
+-- оренду й ЙОГО ВЛАСНИЙ гонорар, а суму клієнта й загальні гонорари
+-- підмінює на порожньо. Не «ховає в інтерфейсі» — саме не кладе у відповідь,
+-- тож цих чисел немає навіть у трафіку.
+
+create or replace function public.company_projects(p_company uuid)
+returns table (
+  id uuid,
+  local_id text,
+  title text,
+  client text,
+  style text,
+  status text,
+  deadline date,
+  location text,
+  latitude double precision,
+  longitude double precision,
+  currency text,
+  fee numeric,
+  rental_cost numeric,
+  other_cost numeric,
+  payout_total numeric,
+  my_payout numeric,
+  shoot_days date[],
+  notes text,
+  updated_at timestamptz,
+  can_manage boolean
+)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select
+    p.id,
+    p.local_id,
+    p.title,
+    p.client,
+    p.style,
+    p.status,
+    p.deadline,
+    p.location,
+    p.latitude,
+    p.longitude,
+    p.currency,
+    case when public.is_manager(p.company_id) then p.fee end,
+    p.rental_cost,
+    p.other_cost,
+    case when public.is_manager(p.company_id) then p.payout_total end,
+    (
+      select coalesce(sum(sp.amount), 0)
+      from public.shared_payouts sp
+      where sp.project_id = p.id and sp.user_id = auth.uid()
+    ),
+    coalesce(
+      (select array_agg(d.day order by d.day) from public.shared_shoot_days d where d.project_id = p.id),
+      '{}'::date[]
+    ),
+    p.notes,
+    p.updated_at,
+    public.is_manager(p.company_id)
+  from public.shared_projects p
+  where p.company_id = p_company
+    and public.is_member(p.company_id)
+  order by p.deadline nulls last, p.title;
+$$;
+
+-- Гонорари одного проєкту. Керівникові — всі, решті — лише свій.
+create or replace function public.project_payouts(p_project uuid)
+returns table (name text, role_title text, amount numeric, currency text, is_mine boolean)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select sp.name, sp.role_title, sp.amount, sp.currency, sp.user_id = auth.uid()
+  from public.shared_payouts sp
+  join public.shared_projects p on p.id = sp.project_id
+  where sp.project_id = p_project
+    and public.is_member(p.company_id)
+    and (public.is_manager(p.company_id) or sp.user_id = auth.uid())
+  order by sp.amount desc;
+$$;
+
+grant execute on function public.publish_project(uuid, jsonb, jsonb) to authenticated;
+grant execute on function public.unpublish_project(uuid, text) to authenticated;
+grant execute on function public.company_projects(uuid) to authenticated;
+grant execute on function public.project_payouts(uuid) to authenticated;

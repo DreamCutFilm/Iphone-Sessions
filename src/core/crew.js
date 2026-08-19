@@ -44,6 +44,10 @@ export function createCrew(input = {}) {
     // Скільки ставимо клієнту. Порожньо — беремо стільки ж, скільки платимо.
     rate: positive(input.rate),
     phone: text(input.phone),
+    // Пошта, якою людина заходить у застосунок. Потрібна рівно для одного:
+    // звʼязати гонорар у проєкті з її акаунтом, щоб вона побачила саме свій.
+    // Без пошти людина в каталозі є, а гонорар для неї — просто рядок.
+    email: text(input.email).toLowerCase(),
     notes: text(input.notes),
     archived: Boolean(input.archived),
     createdAt: now,
