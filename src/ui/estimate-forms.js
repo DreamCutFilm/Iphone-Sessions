@@ -144,6 +144,14 @@ export function editCrew(existing = null, defaults = {}) {
       placeholder: '+380…',
       oninput: (event) => { draft.phone = event.target.value; },
     })),
+    field('Пошта', textInput({
+      value: draft.email,
+      type: 'email',
+      inputmode: 'email',
+      autocapitalize: 'none',
+      placeholder: 'petro@example.com',
+      oninput: (event) => { draft.email = event.target.value; },
+    }), 'Та сама, якою людина заходить у застосунок. Без неї вона не побачить свій гонорар у спільному проєкті — база не знатиме, що гонорар її.'),
     field('Нотатка', textInput({
       value: draft.notes,
       placeholder: 'Своя камера, працює з дроном…',

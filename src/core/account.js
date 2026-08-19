@@ -4,6 +4,24 @@
 // («директор може виганяти»), а не назви таблиць.
 
 import { rpc, query, insert, patch, remove, currentUser } from './cloud.js';
+import { readJson, writeJson, removeKey } from './storage.js';
+
+// Яку фірму застосунок вважає поточною.
+//
+// Зберігається на пристрої, а не питається щоразу в мережі: екран проєктів
+// має відкриватися миттєво й показувати бодай назву фірми, навіть коли звʼязку
+// немає. Людина майже завжди в одній фірмі — і зайве питання «в якій саме»
+// їй нічого не дає.
+const ACTIVE_KEY = 'dreamcut.company.v1';
+
+export function activeCompany() {
+  return readJson(ACTIVE_KEY, null);
+}
+
+export function setActiveCompany(company) {
+  if (company) writeJson(ACTIVE_KEY, { id: company.id, name: company.name, role: company.role });
+  else removeKey(ACTIVE_KEY);
+}
 
 export const ROLES = [
   { id: 'owner', label: 'Директор', hint: 'Бачить заробіток, керує людьми' },

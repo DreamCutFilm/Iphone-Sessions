@@ -22,7 +22,8 @@ import { createTask, createProject } from '../src/core/models.js';
 import { formatMoney, currencySymbol, getCurrency, getLanguage, CURRENCIES, LANGUAGES } from '../src/core/locale.js';
 import { createEquipment, unitMargin } from '../src/core/equipment.js';
 import { makeSlug, isValidSlug, generateCode, roleLabel, canManage } from '../src/core/account.js';
-import { createCrew, crewLabel, clientRate, crewMargin } from '../src/core/crew.js';
+import { createCrew, crewLabel, clientRate, crewMargin, normalizeCrew } from '../src/core/crew.js';
+import { buildProjectPayload, unlinkedPayouts, sharedProfit } from '../src/core/sharing.js';
 import {
   createEstimate, createItem, itemAmount, estimateTotals,
   totalsByCategory, clientView, itemFromEquipment, estimateToText, describeItemCount,
@@ -842,4 +843,78 @@ test('ролі: керувати можуть лише директор і ад�
   assert.ok(!canManage('вигадка'));
   assert.equal(roleLabel('member'), 'Команда');
   assert.equal(roleLabel('невідомо'), 'невідомо', 'невідому роль показуємо як є, а не ховаємо');
+});
+
+test('публікація: у фірму летить те саме, що в проєкті', () => {
+  const crew = [
+    createCrew({ name: 'Петро', role: 'Оператор', fee: 4000, rate: 6000 }),
+    createCrew({ name: 'Оля', role: 'Монтажерка', fee: 3000 }),
+  ];
+  crew[0].email = 'PETRO@Example.com ';
+  const normalized = normalizeCrew(crew[0]);
+
+  const project = createProject({
+    title: 'Концерт', client: 'Філармонія', status: 'shoot',
+    deadline: '2026-09-01', shootDays: ['2026-08-29', '2026-08-28'], location: 'Львів',
+  });
+
+  const estimate = createEstimate({
+    projectId: project.id, currency: 'UAH', status: 'approved',
+    items: [
+      createItem({ title: 'Камера', category: 'equipment', quantity: 2, shifts: 2, unitPrice: 3000, unitCost: 1500 }),
+      itemFromCrew(crew[0], { shifts: 2 }),
+      itemFromCrew(crew[1], { shifts: 1 }),
+    ],
+  });
+
+  const state = {
+    projects: [project], tasks: [], ideas: [], crew, equipment: [],
+    estimates: [estimate], settings: { currency: 'UAH' },
+  };
+
+  const payload = buildProjectPayload(state, project.id);
+
+  assert.equal(payload.project.local_id, project.id);
+  assert.equal(payload.project.title, 'Концерт');
+  assert.deepEqual(payload.project.shoot_days, ['2026-08-29', '2026-08-28']);
+  assert.equal(payload.project.rental_cost, 6000, 'оренда: 2 камери × 2 зміни × 1500');
+  assert.equal(payload.project.payout_total, 11000, 'гонорари: 4000×2 + 3000');
+  assert.equal(payload.project.fee, estimateTotals(estimate).afterDiscount, 'сума клієнта — з кошторису');
+
+  assert.equal(payload.project.notes, null, 'внутрішні нотатки назовні не йдуть');
+
+  const petro = payload.payouts.find((entry) => entry.name === 'Петро');
+  assert.equal(petro.amount, 8000);
+  assert.equal(petro.role_title, 'Оператор');
+  assert.equal(normalized.email, 'petro@example.com', 'пошта зводиться до нижнього регістру');
+});
+
+test('публікація: людину без пошти видно заздалегідь', () => {
+  const withMail = createCrew({ name: 'Петро', role: 'Оператор', fee: 4000, email: 'petro@example.com' });
+  const without = createCrew({ name: 'Оля', role: 'Монтажерка', fee: 3000 });
+  const project = createProject({ title: 'Кліп' });
+  const estimate = createEstimate({
+    projectId: project.id,
+    items: [itemFromCrew(withMail, {}), itemFromCrew(without, {})],
+  });
+
+  const state = {
+    projects: [project], tasks: [], ideas: [], crew: [withMail, without],
+    equipment: [], estimates: [estimate], settings: { currency: 'UAH' },
+  };
+
+  const unlinked = unlinkedPayouts(buildProjectPayload(state, project.id));
+  assert.deepEqual(unlinked, ['Оля'], 'попереджаємо саме про того, хто не побачить гонорар');
+});
+
+test('спільний проєкт: заробіток рахується лише коли всі числа видно', () => {
+  const director = {
+    fee: 60000, rental: 12000, other: 3000, payoutTotal: 13000, myPayout: 0,
+  };
+  assert.equal(sharedProfit(director), 32000);
+
+  // Рядовому учаснику сума клієнта не приходить зовсім — і заробіток
+  // не має «дорахуватися» з нулів, бо вийшов би збиток на порожньому місці.
+  const member = { fee: null, rental: 12000, other: 3000, payoutTotal: null, myPayout: 8000 };
+  assert.equal(sharedProfit(member), null);
 });
