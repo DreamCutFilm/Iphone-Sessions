@@ -4,24 +4,7 @@
 // («директор може виганяти»), а не назви таблиць.
 
 import { rpc, query, insert, patch, remove, currentUser } from './cloud.js';
-import { readJson, writeJson, removeKey } from './storage.js';
-
-// Яку фірму застосунок вважає поточною.
-//
-// Зберігається на пристрої, а не питається щоразу в мережі: екран проєктів
-// має відкриватися миттєво й показувати бодай назву фірми, навіть коли звʼязку
-// немає. Людина майже завжди в одній фірмі — і зайве питання «в якій саме»
-// їй нічого не дає.
-const ACTIVE_KEY = 'dreamcut.company.v1';
-
-export function activeCompany() {
-  return readJson(ACTIVE_KEY, null);
-}
-
-export function setActiveCompany(company) {
-  if (company) writeJson(ACTIVE_KEY, { id: company.id, name: company.name, role: company.role });
-  else removeKey(ACTIVE_KEY);
-}
+import { rememberCompanies } from './context.js';
 
 export const ROLES = [
   { id: 'owner', label: 'Директор', hint: 'Бачить заробіток, керує людьми' },
@@ -72,13 +55,31 @@ export function isValidSlug(slug) {
 /** Фірми, у яких я є, разом із моєю роллю. */
 export async function myCompanies() {
   const rows = await query('memberships', {
-    select: 'role,title,created_at,companies(id,name,slug,city,about,listed)',
+    select: 'role,title,created_at,role_id,'
+      + 'company_roles(name,can_see_client_money,can_see_all_payouts,can_see_client_contacts,'
+      + 'can_see_rental,can_edit,can_manage_team),'
+      + 'companies(id,name,slug,city,about,listed)',
     filter: `user_id=eq.${currentUser()?.id}`,
   });
 
-  return (rows ?? [])
+  const companies = (rows ?? [])
     .filter((row) => row.companies)
-    .map((row) => ({ ...row.companies, role: row.role, title: row.title }));
+    .map((row) => ({
+      ...row.companies,
+      role: row.role,
+      title: row.title,
+      roleId: row.role_id ?? null,
+      roleName: row.company_roles?.name ?? '',
+      // Дозволи власної ролі — щоб застосунок не малював кнопок,
+      // які сервер однаково відхилить.
+      roleGrants: row.company_roles ?? null,
+    }));
+
+  // Список одразу лягає на пристрій: перемикач фірм має малюватися ще до
+  // того, як мережа відповість, а після виходу з фірми — сам себе виправити.
+  rememberCompanies(companies);
+
+  return companies;
 }
 
 export async function createCompany({ name, slug, city, about, listed = true }) {
@@ -103,7 +104,8 @@ export async function searchCompanies(text) {
 
 export async function teamOf(companyId) {
   const rows = await query('memberships', {
-    select: 'id,user_id,role,title,created_at,profiles(full_name,phone,email)',
+    select: 'id,user_id,role,title,role_id,created_at,'
+      + 'company_roles(name),profiles(full_name,phone,email)',
     filter: `company_id=eq.${companyId}`,
     order: 'created_at.asc',
   });
@@ -113,6 +115,8 @@ export async function teamOf(companyId) {
     userId: row.user_id,
     role: row.role,
     title: row.title ?? '',
+    roleId: row.role_id ?? null,
+    roleName: row.company_roles?.name ?? '',
     name: row.profiles?.full_name || '',
     phone: row.profiles?.phone || '',
     email: row.profiles?.email || '',

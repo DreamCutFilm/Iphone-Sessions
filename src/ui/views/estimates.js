@@ -1,6 +1,6 @@
 // Кошториси: список, картка з позиціями, клієнтський вигляд.
 
-import { el, emptyState, toast } from '../dom.js';
+import { el, emptyState, toast, appendIf } from '../dom.js';
 import { pageHeader, sectionTitle, chip, fab, statTile } from '../components.js';
 import { openSheet, closeSheet } from '../sheet.js';
 import { editEstimate, editEstimateItem, openItemPicker } from '../estimate-forms.js';
@@ -12,9 +12,118 @@ import {
   estimateStatusLabel, describeItemCount, itemCost, costByPurpose, ESTIMATE_STATUSES,
 } from '../../core/estimates.js';
 import { formatMoney } from '../../core/locale.js';
+import { inCompany, currentCompany } from '../../core/context.js';
+import { contextBar, freshnessNote } from '../context-bar.js';
+import { companyProjects } from '../../core/sharing.js';
 import { formatDate, toDateOnly } from '../../core/dates.js';
 
 export function estimatesView() {
+  if (inCompany()) return firmEstimatesView();
+  return myEstimatesView();
+}
+
+/**
+ * Кошториси очима фірми.
+ *
+ * Самі кошториси поки живуть на телефоні того, хто їх склав, — вони переїдуть
+ * у фірму пізніше. Але гроші проєктів фірма вже знає, і показати їх чесніше,
+ * ніж лишити порожній екран із написом «скоро»: керівник побачить суми, а
+ * решта — оренду й свій гонорар, рівно як і всюди.
+ */
+function firmEstimatesView() {
+  const company = currentCompany();
+  const page = el('div.page');
+
+  page.append(pageHeader('Гроші', { subtitle: company.name }));
+  appendIf(page, contextBar());
+
+  const host = el('div');
+  page.append(host);
+  loadFirmMoney(host, company);
+
+  return page;
+}
+
+async function loadFirmMoney(host, company) {
+  host.replaceChildren(el('p.settings-note', 'Завантажую…'));
+
+  let result;
+  try {
+    result = await companyProjects(company.id);
+  } catch (error) {
+    host.replaceChildren(
+      el('p.settings-note', error?.message ?? 'Немає звʼязку з сервером'),
+      el('div.form', el('button.btn.btn--ghost.btn--wide', {
+        type: 'button', onclick: () => loadFirmMoney(host, company),
+      }, 'Спробувати ще раз')),
+    );
+    return;
+  }
+
+  const projects = result.value.filter((project) => project.status !== 'archived');
+  const parts = [];
+
+  const stale = freshnessNote(result, () => loadFirmMoney(host, company));
+  if (stale) parts.push(stale);
+
+  if (!projects.length) {
+    parts.push(emptyState('Порожньо', `У «${company.name}» ще немає опублікованих проєктів.`));
+    host.replaceChildren(...parts);
+    return;
+  }
+
+  // Підсумок по фірмі — тільки з тих чисел, які нам справді віддали.
+  const seesMoney = projects.some((project) => project.fee !== null);
+  if (seesMoney) {
+    const income = projects.reduce((sum, project) => sum + (project.fee ?? 0), 0);
+    const spend = projects.reduce(
+      (sum, project) => sum + project.rental + project.other + (project.payoutTotal ?? 0), 0);
+    const currency = projects[0].currency;
+
+    parts.push(el('div.tool-hero.hero--inline',
+      el('p.tool-hero-value', formatMoney(income - spend, currency)),
+      el('p.tool-hero-label', `лишається фірмі по ${projects.length} проєктах`)));
+
+    parts.push(el('div.result',
+      moneyLine('Платять клієнти', formatMoney(income, currency)),
+      moneyLine('Витрати разом', `−${formatMoney(spend, currency)}`)));
+  } else {
+    const mine = projects.reduce((sum, project) => sum + project.myPayout, 0);
+    if (mine > 0) {
+      parts.push(el('div.tool-hero.hero--inline',
+        el('p.tool-hero-value', formatMoney(mine, projects[0].currency)),
+        el('p.tool-hero-label', 'твої гонорари по проєктах фірми')));
+    }
+    parts.push(el('p.settings-note',
+      'Суми, які платять клієнти, бачать директор і адміністратори. Тобі видно оренду техніки й власні гонорари.'));
+  }
+
+  parts.push(sectionTitle('По проєктах'));
+  parts.push(el('div.list', projects.map((project) => {
+    const meta = [];
+    if (project.fee !== null) meta.push(chip(`Клієнт: ${formatMoney(project.fee, project.currency)}`, 'money'));
+    if (project.rental > 0) meta.push(chip(`Оренда: ${formatMoney(project.rental, project.currency)}`));
+    if (project.myPayout > 0) meta.push(chip(`Мій гонорар: ${formatMoney(project.myPayout, project.currency)}`, 'money'));
+
+    return el(
+      'article.card',
+      { onclick: () => navigate(`/team-projects/${project.id}`) },
+      el('div.card-body',
+        el('p.card-title', project.title),
+        project.client && el('p.card-sub', project.client),
+        el('div.row-meta', meta)),
+      el('span.card-chevron', '›'),
+    );
+  })));
+
+  host.replaceChildren(...parts);
+}
+
+function moneyLine(label, value) {
+  return el('div.result-row', el('span.result-label', label), el('span.result-value', value));
+}
+
+function myEstimatesView() {
   const state = getState();
   const page = el('div.page');
 
@@ -22,6 +131,8 @@ export function estimatesView() {
     subtitle: `${state.estimates.length} усього`,
     action: el('button.icon-btn', { type: 'button', 'aria-label': 'Новий кошторис', onclick: () => editEstimate() }, '+'),
   }));
+
+  appendIf(page, contextBar());
 
   page.append(el(
     'div.catalog-links',

@@ -260,6 +260,107 @@ as $$
 $$;
 
 -- ---------------------------------------------------------------------------
+-- 6а. Ролі фірми й дозволи
+-- ---------------------------------------------------------------------------
+-- Досі ролей було три на всіх: директор, адміністратор, команда. Для фірми,
+-- де монтажер, оператор і помічник роблять різне, цього мало.
+--
+-- Тепер директор заводить свої ролі — «Монтажер», «Оператор», «Помічник» —
+-- і кожній ставить, що вона бачить. Дозволів навмисно шість, а не «на кожне
+-- поле»: сорок галочок неможливо втримати в голові, і одного дня хтось
+-- випадково відкрив би гонорари всій команді. Шість можна перечитати очима
+-- за десять секунд, і небезпечну комбінацію з них не зібрати.
+--
+-- Три рівні лишаються, але тепер вони означають інше:
+--   owner  — директор: може все, і забрати це в нього не можна;
+--   admin  — адміністратор: може все, крім керування командою й ролями;
+--   member — команда: може рівно те, що написано в його ролі.
+
+create table if not exists public.company_roles (
+  id          uuid primary key default gen_random_uuid(),
+  company_id  uuid not null references public.companies on delete cascade,
+  name        text not null check (length(trim(name)) > 0),
+
+  -- Суми, які платить клієнт, і заробіток фірми.
+  can_see_client_money    boolean not null default false,
+  -- Гонорари всієї команди. Свій власний видно завжди й без дозволу.
+  can_see_all_payouts     boolean not null default false,
+  -- Хто замовник і як із ним звʼязатися.
+  can_see_client_contacts boolean not null default false,
+  -- Оренда техніки й у скільки вона обходиться фірмі. Увімкнено за
+  -- замовчуванням: без цього людина не знає, що везти на майданчик.
+  can_see_rental          boolean not null default true,
+  -- Створювати й змінювати проєкти, кошториси, публікувати їх.
+  can_edit                boolean not null default false,
+  -- Запрошувати людей, міняти ролі, приймати заявки.
+  can_manage_team         boolean not null default false,
+
+  position    integer not null default 0,
+  created_at  timestamptz not null default now(),
+  unique (company_id, name)
+);
+
+create index if not exists company_roles_company_idx on public.company_roles (company_id);
+
+-- Яку роль має людина. Порожньо — діють лише права свого рівня.
+alter table public.memberships add column if not exists role_id uuid;
+
+alter table public.memberships drop constraint if exists memberships_role_id_fkey;
+alter table public.memberships
+  add constraint memberships_role_id_fkey
+  foreign key (role_id) references public.company_roles (id) on delete set null;
+
+-- ---------------------------------------------------------------------------
+-- 6б. Одне питання замість шести
+-- ---------------------------------------------------------------------------
+-- Уся схема тепер питає дозвіл в одному місці. Це навмисно: доки правило
+-- живе в одній функції, його можна прочитати цілком і переконатися, що воно
+-- те, що треба. Розсипане по двадцятьох правилах доступу, воно рано чи пізно
+-- десь розійдеться саме з собою — і розійдеться тихо.
+
+create or replace function public.can(cid uuid, what text)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select coalesce((
+    select case
+      -- Директора обмежити не можна: фірма інакше замкнула б сама себе.
+      when m.role = 'owner' then true
+      when m.role = 'admin' then what <> 'team'
+      else case what
+        when 'money'    then coalesce(r.can_see_client_money, false)
+        when 'payouts'  then coalesce(r.can_see_all_payouts, false)
+        when 'contacts' then coalesce(r.can_see_client_contacts, false)
+        when 'rental'   then coalesce(r.can_see_rental, true)
+        when 'edit'     then coalesce(r.can_edit, false)
+        when 'team'     then coalesce(r.can_manage_team, false)
+        else false
+      end
+    end
+    from public.memberships m
+    left join public.company_roles r on r.id = m.role_id
+    where m.company_id = cid and m.user_id = auth.uid()
+    limit 1
+  ), false);
+$$;
+
+alter table public.company_roles enable row level security;
+
+-- Ролі видно всій команді: людина має право знати, що саме їй дозволено.
+drop policy if exists company_roles_select on public.company_roles;
+create policy company_roles_select on public.company_roles for select
+  using (public.is_member(company_id));
+
+drop policy if exists company_roles_write on public.company_roles;
+create policy company_roles_write on public.company_roles for all
+  using (public.can(company_id, 'team')) with check (public.can(company_id, 'team'));
+
+grant execute on function public.can(uuid, text) to authenticated;
+
+-- ---------------------------------------------------------------------------
 -- 7. Права доступу
 -- ---------------------------------------------------------------------------
 
@@ -291,7 +392,7 @@ create policy companies_insert on public.companies for insert
 
 drop policy if exists companies_update on public.companies;
 create policy companies_update on public.companies for update
-  using (public.is_manager(id)) with check (public.is_manager(id));
+  using (public.can(id, 'team')) with check (public.can(id, 'team'));
 
 drop policy if exists companies_delete on public.companies;
 create policy companies_delete on public.companies for delete
@@ -307,7 +408,7 @@ create policy memberships_select on public.memberships for select
 drop policy if exists memberships_insert on public.memberships;
 create policy memberships_insert on public.memberships for insert
   with check (
-    public.is_manager(company_id)
+    public.can(company_id, 'team')
     or (
       user_id = auth.uid()
       and not exists (select 1 from public.memberships m where m.company_id = memberships.company_id)
@@ -322,12 +423,12 @@ create policy memberships_update on public.memberships for update
 -- Піти з фірми можна самому; вигнати — тільки директор.
 drop policy if exists memberships_delete on public.memberships;
 create policy memberships_delete on public.memberships for delete
-  using (user_id = auth.uid() or public.member_role(company_id) = 'owner');
+  using (user_id = auth.uid() or public.can(company_id, 'team'));
 
 -- Заявки: свою бачить автор, усі — керівники фірми.
 drop policy if exists join_requests_select on public.join_requests;
 create policy join_requests_select on public.join_requests for select
-  using (user_id = auth.uid() or public.is_manager(company_id));
+  using (user_id = auth.uid() or public.can(company_id, 'team'));
 
 drop policy if exists join_requests_insert on public.join_requests;
 create policy join_requests_insert on public.join_requests for insert
@@ -335,25 +436,25 @@ create policy join_requests_insert on public.join_requests for insert
 
 drop policy if exists join_requests_update on public.join_requests;
 create policy join_requests_update on public.join_requests for update
-  using (public.is_manager(company_id)) with check (public.is_manager(company_id));
+  using (public.can(company_id, 'team')) with check (public.can(company_id, 'team'));
 
 drop policy if exists join_requests_delete on public.join_requests;
 create policy join_requests_delete on public.join_requests for delete
-  using (user_id = auth.uid() or public.is_manager(company_id));
+  using (user_id = auth.uid() or public.can(company_id, 'team'));
 
 -- Запрошення: бачать лише керівники. Стороння людина не читає таблицю —
 -- вона активує код через функцію нижче.
 drop policy if exists invites_select on public.invites;
 create policy invites_select on public.invites for select
-  using (public.is_manager(company_id));
+  using (public.can(company_id, 'team'));
 
 drop policy if exists invites_insert on public.invites;
 create policy invites_insert on public.invites for insert
-  with check (public.is_manager(company_id) and created_by = auth.uid());
+  with check (public.can(company_id, 'team') and created_by = auth.uid());
 
 drop policy if exists invites_delete on public.invites;
 create policy invites_delete on public.invites for delete
-  using (public.is_manager(company_id));
+  using (public.can(company_id, 'team'));
 
 -- ---------------------------------------------------------------------------
 -- 8. Дії, які не можна віддати клієнтському коду
@@ -388,6 +489,13 @@ begin
 
   insert into public.memberships (company_id, user_id, role)
   values (new_company.id, auth.uid(), 'owner');
+
+  insert into public.company_roles (company_id, name, position, can_see_rental)
+  values
+    (new_company.id, 'Оператор', 1, true),
+    (new_company.id, 'Монтажер', 2, true),
+    (new_company.id, 'Помічник', 3, true)
+  on conflict do nothing;
 
   return new_company;
 end;
@@ -449,7 +557,7 @@ begin
   if req.id is null then
     raise exception 'Заявку не знайдено';
   end if;
-  if not public.is_manager(req.company_id) then
+  if not public.can(req.company_id, 'team') then
     raise exception 'Немає прав приймати заявки цієї фірми';
   end if;
 
@@ -492,8 +600,265 @@ grant execute on function public.redeem_invite(text) to authenticated;
 grant execute on function public.approve_join_request(uuid, text) to authenticated;
 grant execute on function public.search_companies(text) to authenticated;
 
+-- Одиниця в правильному відмінку: «2 зміни», а не «2 зміна».
+-- Українське число не терпить одного слова на всі випадки, і на екрані
+-- це помітно одразу.
+create or replace function public.tidy_unit(value numeric, unit text)
+returns text
+language sql
+immutable
+as $$
+  select case
+    when unit = 'зміна' then case
+      when value::int % 100 between 11 and 14 then 'змін'
+      when value::int % 10 = 1 then 'зміна'
+      when value::int % 10 between 2 and 4 then 'зміни'
+      else 'змін' end
+    when unit = 'день' then case
+      when value::int % 100 between 11 and 14 then 'днів'
+      when value::int % 10 = 1 then 'день'
+      when value::int % 10 between 2 and 4 then 'дні'
+      else 'днів' end
+    when unit = 'година' then case
+      when value::int % 100 between 11 and 14 then 'годин'
+      when value::int % 10 = 1 then 'година'
+      when value::int % 10 between 2 and 4 then 'години'
+      else 'годин' end
+    else unit
+  end;
+$$;
+
+-- Число для людини: ціле — без хвоста, дробове — з двома знаками.
+-- Дрібниця, але «2. × 2. зміна» на екрані виглядає як зламаний застосунок.
+create or replace function public.tidy_number(value numeric)
+returns text
+language sql
+immutable
+as $$
+  select case
+    when value = trunc(value) then trunc(value)::bigint::text
+    else trim(to_char(value, 'FM9999999990.99'))
+  end;
+$$;
+
 -- ---------------------------------------------------------------------------
--- 9. Спільні проєкти
+-- 8а. Каталоги фірми: техніка й команда
+-- ---------------------------------------------------------------------------
+-- Досі каталоги жили на телефоні того, хто їх завів. Двоє адміністраторів
+-- вели два різні списки тієї самої техніки, а людина з команди не бачила
+-- жодного. Тепер каталог один на фірму.
+--
+-- Ціни тут двох сортів, і плутати їх не можна:
+--   day_rate / rate — скільки ставимо КЛІЄНТУ (це гроші клієнта);
+--   day_cost / fee  — у скільки обходиться НАМ (це оренда й гонорари).
+-- Тому й дозволи різні: собівартість видно за «орендою», ціну клієнту —
+-- за «сумами клієнта». Одна колонка не має відкривати іншу.
+
+create table if not exists public.company_equipment (
+  id          uuid primary key default gen_random_uuid(),
+  company_id  uuid not null references public.companies on delete cascade,
+  -- Звідки приїхало з телефона. За цим полем перенесення впізнає, що це
+  -- та сама позиція, а не нова, — і повторний перенос не плодить дублів.
+  local_id    text,
+  title       text not null,
+  category    text not null default 'other',
+  ownership   text not null default 'own',
+  day_rate    numeric(14, 2),
+  day_cost    numeric(14, 2),
+  notes       text,
+  archived    boolean not null default false,
+  updated_at  timestamptz not null default now(),
+  unique (company_id, local_id)
+);
+
+create index if not exists company_equipment_idx on public.company_equipment (company_id, archived);
+
+create table if not exists public.company_crew (
+  id          uuid primary key default gen_random_uuid(),
+  company_id  uuid not null references public.companies on delete cascade,
+  local_id    text,
+  name        text,
+  role        text not null default 'Оператор',
+  -- Скільки платимо людині.
+  fee         numeric(14, 2),
+  -- Скільки ставимо клієнту.
+  rate        numeric(14, 2),
+  phone       text,
+  email       text,
+  -- Хто це у фірмі, якщо людина вже має акаунт.
+  user_id     uuid references public.profiles (id) on delete set null,
+  notes       text,
+  archived    boolean not null default false,
+  updated_at  timestamptz not null default now(),
+  unique (company_id, local_id)
+);
+
+create index if not exists company_crew_idx on public.company_crew (company_id, archived);
+
+alter table public.company_equipment enable row level security;
+alter table public.company_crew      enable row level security;
+
+-- Читає вся команда: список техніки — це робота, а не гроші. Числа підрізає
+-- функція нижче, а не правило доступу: правило вміє лише впустити чи ні,
+-- а нам треба віддати рядок без частини колонок.
+drop policy if exists company_equipment_select on public.company_equipment;
+create policy company_equipment_select on public.company_equipment for select
+  using (public.is_member(company_id));
+
+drop policy if exists company_equipment_write on public.company_equipment;
+create policy company_equipment_write on public.company_equipment for all
+  using (public.can(company_id, 'edit')) with check (public.can(company_id, 'edit'));
+
+-- Каталог людей — інша річ: там чужі гонорари, і бачити їх має не кожен.
+drop policy if exists company_crew_select on public.company_crew;
+create policy company_crew_select on public.company_crew for select
+  using (public.can(company_id, 'payouts') or public.can(company_id, 'edit'));
+
+drop policy if exists company_crew_write on public.company_crew;
+create policy company_crew_write on public.company_crew for all
+  using (public.can(company_id, 'edit')) with check (public.can(company_id, 'edit'));
+
+-- ---------------------------------------------------------------------------
+-- 8б. Що з каталогів видно
+-- ---------------------------------------------------------------------------
+
+create or replace function public.company_gear(p_company uuid)
+returns table (
+  id uuid, local_id text, title text, category text, ownership text,
+  day_rate numeric, day_cost numeric, notes text, archived boolean, can_edit boolean
+)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select
+    e.id, e.local_id, e.title, e.category, e.ownership,
+    -- Ціна для клієнта — гроші клієнта.
+    case when public.can(e.company_id, 'money') then e.day_rate end,
+    -- Собівартість — оренда.
+    case when public.can(e.company_id, 'rental') then e.day_cost end,
+    e.notes, e.archived,
+    public.can(e.company_id, 'edit')
+  from public.company_equipment e
+  where e.company_id = p_company and public.is_member(e.company_id)
+  order by e.archived, e.title;
+$$;
+
+-- Каталог людей. Свій рядок людина бачить завжди — це її власний гонорар.
+create or replace function public.company_people(p_company uuid)
+returns table (
+  id uuid, local_id text, name text, role text,
+  fee numeric, rate numeric, phone text, email text,
+  user_id uuid, notes text, archived boolean, is_me boolean, can_edit boolean
+)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select
+    c.id, c.local_id, c.name, c.role,
+    case when public.can(c.company_id, 'payouts') or c.user_id = auth.uid() then c.fee end,
+    case when public.can(c.company_id, 'money') then c.rate end,
+    case when public.can(c.company_id, 'team') or c.user_id = auth.uid() then c.phone end,
+    case when public.can(c.company_id, 'team') or c.user_id = auth.uid() then c.email end,
+    c.user_id, c.notes, c.archived,
+    coalesce(c.user_id = auth.uid(), false),
+    public.can(c.company_id, 'edit')
+  from public.company_crew c
+  where c.company_id = p_company
+    and public.is_member(c.company_id)
+    and (
+      public.can(c.company_id, 'payouts')
+      or public.can(c.company_id, 'edit')
+      or c.user_id = auth.uid()
+    )
+  order by c.archived, c.role, c.name;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 8в. Перенести свій каталог у фірму
+-- ---------------------------------------------------------------------------
+-- Каталог, зібраний за рік, ніхто не вбиватиме руками вдруге. Переносимо
+-- одним запитом і за local_id: повторний перенос оновлює те саме, а не
+-- створює другий комплект.
+
+create or replace function public.import_catalog(
+  p_company uuid,
+  p_equipment jsonb default '[]'::jsonb,
+  p_crew jsonb default '[]'::jsonb
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  moved integer := 0;
+  batch integer := 0;
+begin
+  if not public.can(p_company, 'edit') then
+    raise exception 'Переносити каталог твоя роль не дозволяє';
+  end if;
+
+  insert into public.company_equipment
+    (company_id, local_id, title, category, ownership, day_rate, day_cost, notes, archived, updated_at)
+  select
+    p_company,
+    item ->> 'local_id',
+    coalesce(nullif(trim(item ->> 'title'), ''), 'Без назви'),
+    coalesce(item ->> 'category', 'other'),
+    coalesce(item ->> 'ownership', 'own'),
+    (item ->> 'day_rate')::numeric,
+    (item ->> 'day_cost')::numeric,
+    nullif(trim(coalesce(item ->> 'notes', '')), ''),
+    coalesce((item ->> 'archived')::boolean, false),
+    now()
+  from jsonb_array_elements(coalesce(p_equipment, '[]'::jsonb)) as item
+  on conflict (company_id, local_id) do update set
+    title = excluded.title, category = excluded.category, ownership = excluded.ownership,
+    day_rate = excluded.day_rate, day_cost = excluded.day_cost, notes = excluded.notes,
+    archived = excluded.archived, updated_at = now();
+
+  get diagnostics batch = row_count;
+  moved := moved + batch;
+
+  insert into public.company_crew
+    (company_id, local_id, name, role, fee, rate, phone, email, user_id, notes, archived, updated_at)
+  select
+    p_company,
+    person ->> 'local_id',
+    nullif(trim(coalesce(person ->> 'name', '')), ''),
+    coalesce(nullif(trim(person ->> 'role'), ''), 'Оператор'),
+    (person ->> 'fee')::numeric,
+    (person ->> 'rate')::numeric,
+    nullif(trim(coalesce(person ->> 'phone', '')), ''),
+    nullif(trim(coalesce(person ->> 'email', '')), ''),
+    -- Звʼязок з акаунтом приймаємо тільки на того, хто справді у фірмі.
+    (select m.user_id from public.memberships m
+      where m.company_id = p_company
+        and m.user_id = nullif(person ->> 'user_id', '')::uuid),
+    nullif(trim(coalesce(person ->> 'notes', '')), ''),
+    coalesce((person ->> 'archived')::boolean, false),
+    now()
+  from jsonb_array_elements(coalesce(p_crew, '[]'::jsonb)) as person
+  on conflict (company_id, local_id) do update set
+    name = excluded.name, role = excluded.role, fee = excluded.fee, rate = excluded.rate,
+    phone = excluded.phone, email = excluded.email, user_id = excluded.user_id,
+    notes = excluded.notes, archived = excluded.archived, updated_at = now();
+
+  get diagnostics batch = row_count;
+  return moved + batch;
+end;
+$$;
+
+grant execute on function public.company_gear(uuid) to authenticated;
+grant execute on function public.company_people(uuid) to authenticated;
+grant execute on function public.import_catalog(uuid, jsonb, jsonb) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 8е. Спільні проєкти
 -- ---------------------------------------------------------------------------
 -- Головне правило всієї цієї частини, словами замовника:
 --
@@ -573,28 +938,184 @@ alter table public.shared_payouts    enable row level security;
 -- Проєкти: читають і пишуть ЛИШЕ керівники. Для команди дороги сюди немає —
 -- вона ходить через функцію company_projects нижче.
 drop policy if exists shared_projects_all on public.shared_projects;
-create policy shared_projects_all on public.shared_projects for all
-  using (public.is_manager(company_id)) with check (public.is_manager(company_id));
+drop policy if exists shared_projects_select on public.shared_projects;
+create policy shared_projects_select on public.shared_projects for select
+  using (public.can(company_id, 'money'));
+
+drop policy if exists shared_projects_write on public.shared_projects;
+create policy shared_projects_write on public.shared_projects for all
+  using (public.can(company_id, 'edit')) with check (public.can(company_id, 'edit'));
 
 drop policy if exists shared_shoot_days_all on public.shared_shoot_days;
 create policy shared_shoot_days_all on public.shared_shoot_days for all
   using (exists (
     select 1 from public.shared_projects p
-    where p.id = project_id and public.is_manager(p.company_id)
+    where p.id = project_id and public.can(p.company_id, 'edit')
   ))
   with check (exists (
     select 1 from public.shared_projects p
-    where p.id = project_id and public.is_manager(p.company_id)
+    where p.id = project_id and public.can(p.company_id, 'edit')
   ));
 
 -- Гонорари: керівник бачить усі, людина — тільки свій власний рядок.
 drop policy if exists shared_payouts_select on public.shared_payouts;
 create policy shared_payouts_select on public.shared_payouts for select
-  using (public.is_manager(company_id) or user_id = auth.uid());
+  using (public.can(company_id, 'payouts') or user_id = auth.uid());
 
 drop policy if exists shared_payouts_write on public.shared_payouts;
 create policy shared_payouts_write on public.shared_payouts for all
-  using (public.is_manager(company_id)) with check (public.is_manager(company_id));
+  using (public.can(company_id, 'edit')) with check (public.can(company_id, 'edit'));
+
+-- ---------------------------------------------------------------------------
+-- 8г. Кошториси фірми
+-- ---------------------------------------------------------------------------
+-- Досі проєкт потрапляв у фірму знімком: директор складав його на телефоні
+-- й публікував. Двоє адміністраторів працювати з одним проєктом не могли —
+-- кожен публікував свій знімок поверх чужого.
+--
+-- Тепер проєкт народжується у фірмі. Знімок лишається одним-єдиним шляхом:
+-- перенести свій старий особистий проєкт. Тому local_id більше не
+-- обовʼязковий — у проєкта, створеного у фірмі, його просто немає.
+
+alter table public.shared_projects alter column local_id drop not null;
+
+-- ---------------------------------------------------------------------------
+-- 8ґ. Позиції кошторису
+-- ---------------------------------------------------------------------------
+-- Кошторис — це і є гроші клієнта: у кожному рядку стоїть ціна, яку йому
+-- виставляють. Тому правити кошториси мало права «правити проєкти» — треба
+-- ще й дозвіл на суми клієнта. Інакше «Старший оператор», якому відкрили
+-- редагування дат і техніки, побачив би заразом і всі суми.
+
+create table if not exists public.company_estimates (
+  id               uuid primary key default gen_random_uuid(),
+  company_id       uuid not null references public.companies on delete cascade,
+  project_id       uuid references public.shared_projects on delete cascade,
+  local_id         text,
+  title            text not null default 'Кошторис',
+  status           text not null default 'draft'
+                     check (status in ('draft', 'sent', 'approved', 'declined')),
+  currency         text not null default 'UAH',
+  discount_percent numeric(6, 2) not null default 0,
+  tax_percent      numeric(6, 2) not null default 0,
+  client_notes     text,
+  notes            text,
+  sent_at          timestamptz,
+  approved_at      timestamptz,
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now(),
+  unique (company_id, local_id)
+);
+
+create index if not exists company_estimates_project_idx on public.company_estimates (project_id);
+create index if not exists company_estimates_company_idx on public.company_estimates (company_id);
+
+create table if not exists public.company_estimate_items (
+  id            uuid primary key default gen_random_uuid(),
+  estimate_id   uuid not null references public.company_estimates on delete cascade,
+  company_id    uuid not null references public.companies on delete cascade,
+  title         text not null default 'Позиція',
+  category      text not null default 'equipment',
+  -- Звідки взяли позицію. Потрібне для двох речей: показати «що везти»
+  -- з поміткою «своя / орендуємо» і звʼязати гонорар з акаунтом людини.
+  equipment_id  uuid references public.company_equipment on delete set null,
+  crew_id       uuid references public.company_crew on delete set null,
+  internal_only boolean not null default false,
+  unit          text not null default 'зміна',
+  quantity      numeric(10, 2) not null default 1,
+  shifts        numeric(10, 2) not null default 1,
+  -- Ціна клієнту.
+  unit_price    numeric(14, 2) not null default 0,
+  -- У скільки обходиться нам.
+  unit_cost     numeric(14, 2) not null default 0,
+  notes         text,
+  position      integer not null default 0
+);
+
+create index if not exists company_estimate_items_idx on public.company_estimate_items (estimate_id);
+
+alter table public.company_estimates      enable row level security;
+alter table public.company_estimate_items enable row level security;
+
+-- Читати кошторис — це бачити суми клієнта. Правити — те саме плюс право
+-- правити взагалі. Решта команди дивиться на проєкт крізь функції нижче,
+-- які віддають лише дозволені шматки.
+drop policy if exists company_estimates_select on public.company_estimates;
+create policy company_estimates_select on public.company_estimates for select
+  using (public.can(company_id, 'money'));
+
+drop policy if exists company_estimates_write on public.company_estimates;
+create policy company_estimates_write on public.company_estimates for all
+  using (public.can(company_id, 'money') and public.can(company_id, 'edit'))
+  with check (public.can(company_id, 'money') and public.can(company_id, 'edit'));
+
+drop policy if exists company_estimate_items_select on public.company_estimate_items;
+create policy company_estimate_items_select on public.company_estimate_items for select
+  using (public.can(company_id, 'money'));
+
+drop policy if exists company_estimate_items_write on public.company_estimate_items;
+create policy company_estimate_items_write on public.company_estimate_items for all
+  using (public.can(company_id, 'money') and public.can(company_id, 'edit'))
+  with check (public.can(company_id, 'money') and public.can(company_id, 'edit'));
+
+-- ---------------------------------------------------------------------------
+-- 8д. Гроші проєкту рахуються з кошторисів
+-- ---------------------------------------------------------------------------
+-- Раніше суми лежали в самому проєкті: їх туди клав знімок. Тепер вони
+-- рахуються з кошторисів — і розійтися з ними більше не можуть за
+-- визначенням. Для перенесених старих проєктів лишається запасний шлях:
+-- якщо кошторисів немає, беремо те, що приїхало знімком.
+--
+-- Основою беремо затверджений кошторис, якщо він є; далі — надісланий;
+-- далі — чернетку. Той самий порядок, що й на телефоні: рахувати треба
+-- за найпевнішим, а не за сумою всіх варіантів однієї зйомки.
+
+create or replace function public.project_money(p_project uuid)
+returns table (income numeric, rental numeric, payouts numeric, other numeric, currency text)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with chosen as (
+    select e.id, e.currency, e.discount_percent
+    from public.company_estimates e
+    where e.project_id = p_project
+      and e.status <> 'declined'
+      and e.status = (
+        select case
+          when bool_or(x.status = 'approved') then 'approved'
+          when bool_or(x.status = 'sent') then 'sent'
+          else 'draft'
+        end
+        from public.company_estimates x
+        where x.project_id = p_project and x.status <> 'declined'
+      )
+  ),
+  lines as (
+    select
+      c.currency,
+      c.discount_percent,
+      i.category,
+      i.crew_id,
+      i.internal_only,
+      i.quantity * i.shifts * i.unit_price as amount,
+      i.quantity * i.shifts * i.unit_cost  as cost
+    from chosen c
+    join public.company_estimate_items i on i.estimate_id = c.id
+  )
+  select
+    round(coalesce(sum(case when internal_only then 0 else amount end), 0)
+      * (1 - coalesce(max(discount_percent), 0) / 100), 2),
+    round(coalesce(sum(case when category = 'equipment' then cost else 0 end), 0), 2),
+    round(coalesce(sum(case when category = 'crew' or crew_id is not null then cost else 0 end), 0), 2),
+    round(coalesce(sum(case
+      when category <> 'equipment' and category <> 'crew' and crew_id is null then cost else 0 end), 0), 2),
+    coalesce(max(currency), 'UAH')
+  from lines;
+$$;
+
+grant execute on function public.project_money(uuid) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 9а. Публікація проєкту у фірму
@@ -623,8 +1144,8 @@ declare
   entry  jsonb;
   found  uuid;
 begin
-  if not public.is_manager(p_company) then
-    raise exception 'Публікувати проєкти може директор або адміністратор';
+  if not public.can(p_company, 'edit') then
+    raise exception 'Публікувати проєкти твоя роль не дозволяє';
   end if;
 
   insert into public.shared_projects as sp (
@@ -778,8 +1299,8 @@ security definer
 set search_path = public
 as $$
 begin
-  if not public.is_manager(p_company) then
-    raise exception 'Прибрати проєкт може директор або адміністратор';
+  if not public.can(p_company, 'edit') then
+    raise exception 'Прибрати проєкт твоя роль не дозволяє';
   end if;
 
   delete from public.shared_projects
@@ -846,7 +1367,7 @@ create policy shared_tasks_select on public.shared_tasks for select
 
 drop policy if exists shared_tasks_write on public.shared_tasks;
 create policy shared_tasks_write on public.shared_tasks for all
-  using (public.is_manager(company_id)) with check (public.is_manager(company_id));
+  using (public.can(company_id, 'edit')) with check (public.can(company_id, 'edit'));
 
 drop policy if exists shared_items_select on public.shared_items;
 create policy shared_items_select on public.shared_items for select
@@ -854,7 +1375,7 @@ create policy shared_items_select on public.shared_items for select
 
 drop policy if exists shared_items_write on public.shared_items;
 create policy shared_items_write on public.shared_items for all
-  using (public.is_manager(company_id)) with check (public.is_manager(company_id));
+  using (public.can(company_id, 'edit')) with check (public.can(company_id, 'edit'));
 
 -- ---------------------------------------------------------------------------
 -- 9б. Що людина бачить
@@ -896,22 +1417,42 @@ as $$
     p.id,
     p.local_id,
     p.title,
-    p.client,
+    case when public.can(p.company_id, 'contacts') then p.client end,
     p.style,
     p.status,
     p.deadline,
     p.location,
     p.latitude,
     p.longitude,
-    p.currency,
-    case when public.is_manager(p.company_id) then p.fee end,
-    p.rental_cost,
-    p.other_cost,
-    case when public.is_manager(p.company_id) then p.payout_total end,
+    -- Валюта тепер приходить із кошторису: саме він вирішує, у чому рахуємо.
+    coalesce(nullif(m.currency, ''), p.currency),
+    -- Числа рахуються з кошторисів фірми. Знімок лишається запасним шляхом
+    -- для старих проєктів, перенесених із телефона: якщо кошторисів немає,
+    -- беремо те, що приїхало разом із ними.
+    case when public.can(p.company_id, 'money')
+      then coalesce(nullif(m.income, 0), p.fee) end,
+    case when public.can(p.company_id, 'rental')
+      then coalesce(nullif(m.rental, 0), p.rental_cost) end,
+    case when public.can(p.company_id, 'rental')
+      then coalesce(nullif(m.other, 0), p.other_cost) end,
+    case when public.can(p.company_id, 'money')
+      then coalesce(nullif(m.payouts, 0), p.payout_total) end,
     (
-      select coalesce(sum(sp.amount), 0)
-      from public.shared_payouts sp
-      where sp.project_id = p.id and sp.user_id = auth.uid()
+      select coalesce(sum(amount), 0) from (
+        select round(i.quantity * i.shifts * i.unit_cost, 2) as amount
+        from public.company_estimate_items i
+        join public.company_estimates est on est.id = i.estimate_id
+        join public.company_crew c on c.id = i.crew_id
+        where est.project_id = p.id and est.status <> 'declined' and c.user_id = auth.uid()
+        union all
+        select sp.amount
+        from public.shared_payouts sp
+        where sp.project_id = p.id and sp.user_id = auth.uid()
+          and not exists (
+            select 1 from public.company_estimates e2
+            where e2.project_id = p.id and e2.status <> 'declined'
+          )
+      ) mine
     ),
     coalesce(
       (select array_agg(d.day order by d.day) from public.shared_shoot_days d where d.project_id = p.id),
@@ -919,8 +1460,9 @@ as $$
     ),
     p.notes,
     p.updated_at,
-    public.is_manager(p.company_id)
+    public.can(p.company_id, 'edit')
   from public.shared_projects p
+  cross join lateral public.project_money(p.id) m
   where p.company_id = p_company
     and public.is_member(p.company_id)
   order by p.deadline nulls last, p.title;
@@ -934,13 +1476,40 @@ security definer
 stable
 set search_path = public
 as $$
-  select sp.name, sp.role_title, sp.amount, sp.currency, coalesce(sp.user_id = auth.uid(), false)
-  from public.shared_payouts sp
-  join public.shared_projects p on p.id = sp.project_id
-  where sp.project_id = p_project
-    and public.is_member(p.company_id)
-    and (public.is_manager(p.company_id) or sp.user_id = auth.uid())
-  order by sp.amount desc;
+  -- Гонорари з кошторисів фірми: кожен рядок з людиною — це гроші, які
+  -- підуть із кишені фірми. Своє видно завжди, чуже — за дозволом.
+  select name, role_title, amount, currency, is_mine
+  from (
+    select
+      coalesce(c.name, i.title) as name,
+      c.role as role_title,
+      round(i.quantity * i.shifts * i.unit_cost, 2) as amount,
+      est.currency,
+      coalesce(c.user_id = auth.uid(), false) as is_mine
+    from public.company_estimate_items i
+    join public.company_estimates est on est.id = i.estimate_id
+    left join public.company_crew c on c.id = i.crew_id
+    where est.project_id = p_project
+      and est.status <> 'declined'
+      and public.is_member(i.company_id)
+      and (i.category = 'crew' or i.crew_id is not null)
+      and (public.can(i.company_id, 'payouts') or c.user_id = auth.uid())
+
+    union all
+
+    select sp.name, sp.role_title, sp.amount, sp.currency,
+      coalesce(sp.user_id = auth.uid(), false)
+    from public.shared_payouts sp
+    join public.shared_projects p on p.id = sp.project_id
+    where sp.project_id = p_project
+      and public.is_member(p.company_id)
+      and (public.can(p.company_id, 'payouts') or sp.user_id = auth.uid())
+      and not exists (
+        select 1 from public.company_estimates e2
+        where e2.project_id = p_project and e2.status <> 'declined'
+      )
+  ) rows
+  order by amount desc;
 $$;
 
 -- Задачі проєкту. Бачить уся команда — з позначкою, що доручено саме тобі.
@@ -973,11 +1542,51 @@ security definer
 stable
 set search_path = public
 as $$
-  select i.title, i.category, i.count_label, i.ownership, i.cost, i.currency, i.notes
-  from public.shared_items i
-  join public.shared_projects p on p.id = i.project_id
-  where i.project_id = p_project and public.is_member(p.company_id)
-  order by i.position;
+  -- Спершу дивимось у кошториси фірми: це жива правда. Якщо їх немає —
+  -- проєкт перенесли знімком, і техніка лежить там, де лежала. Порядок
+  -- задається окремою колонкою, бо в обʼєднанні двох джерел «position»
+  -- одного з них нічого не значить для другого.
+  select title, category, count_label, ownership, cost, currency, notes
+  from (
+    select
+      i.title,
+      i.category,
+      -- «2 × 3 зміни» збираємо тут-таки: у кошторисі це три окремі числа.
+      case
+        when i.quantity > 1
+          then public.tidy_number(i.quantity) || ' × '
+             || public.tidy_number(i.shifts) || ' ' || public.tidy_unit(i.shifts, i.unit)
+        else public.tidy_number(i.shifts) || ' ' || public.tidy_unit(i.shifts, i.unit)
+      end as count_label,
+      e.ownership,
+      case when public.can(i.company_id, 'rental')
+        then round(i.quantity * i.shifts * i.unit_cost, 2) end as cost,
+      est.currency,
+      coalesce(i.notes, e.notes) as notes,
+      i.position as sort
+    from public.company_estimate_items i
+    join public.company_estimates est on est.id = i.estimate_id
+    left join public.company_equipment e on e.id = i.equipment_id
+    where est.project_id = p_project
+      and public.is_member(i.company_id)
+      and i.category <> 'crew' and i.crew_id is null
+      and est.status <> 'declined'
+
+    union all
+
+    select i.title, i.category, i.count_label, i.ownership,
+      case when public.can(p.company_id, 'rental') then i.cost end,
+      i.currency, i.notes, i.position
+    from public.shared_items i
+    join public.shared_projects p on p.id = i.project_id
+    where i.project_id = p_project
+      and public.is_member(p.company_id)
+      and not exists (
+        select 1 from public.company_estimates e2
+        where e2.project_id = p_project and e2.status <> 'declined'
+      )
+  ) rows
+  order by sort;
 $$;
 
 -- Мої задачі по всій фірмі — щоб не заходити в кожен проєкт окремо.
@@ -999,7 +1608,7 @@ as $$
     and public.is_member(p.company_id)
     and not t.done
     -- Керівник бачить усі задачі фірми, решта — свої та спільні (нічиї).
-    and (public.is_manager(p.company_id) or t.assignee_id = auth.uid() or t.assignee_id is null)
+    and (public.can(p.company_id, 'edit') or t.assignee_id = auth.uid() or t.assignee_id is null)
   order by coalesce(t.assignee_id = auth.uid(), false) desc, t.due nulls last, t.position;
 $$;
 

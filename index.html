@@ -29,6 +29,79 @@
     </p>
   </noscript>
 
+  <!-- Аварійний екран.
+
+       Якщо застосунок не зміг запуститися, людина бачила просто чорне поле:
+       ні що зламалось, ні що робити. Найгірший можливий стан — виглядає як
+       «телефон здох», а насправді це одна помилка в одному файлі.
+
+       Скрипт навмисно звичайний, а не модуль, і стоїть ДО застосунку: модуль,
+       який не завантажився, нічого про себе не розкаже, а цей уже на місці
+       й почує помилку. Кнопка «Полагодити» скидає кеш і перезавантажує —
+       саме те, що рятує після невдалого оновлення. Дані при цьому не чіпаються:
+       вони лежать окремо від кешу файлів. -->
+  <script>
+    (function () {
+      var shown = false;
+
+      function show(what) {
+        if (shown) return;
+        shown = true;
+
+        var screen = document.getElementById('screen');
+        if (!screen) return;
+
+        screen.innerHTML =
+          '<div style="padding:24px calc(env(safe-area-inset-left,0px) + 16px) 24px calc(env(safe-area-inset-right,0px) + 16px);' +
+          'font:16px/1.45 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;color:#f2f3f5">' +
+          '<h1 style="font-size:22px;margin:0 0 10px">Застосунок не запустився</h1>' +
+          '<p style="color:#8b9099;margin:0 0 16px">Твої проєкти, задачі й кошториси на місці — ' +
+          'вони зберігаються окремо й не постраждали. Спробуй полагодити: це скине завантажені ' +
+          'файли й забере їх наново.</p>' +
+          '<button id="fixBtn" style="width:100%;min-height:48px;border:0;border-radius:14px;' +
+          'background:#ffb020;color:#0b0c0e;font:600 16px inherit;margin-bottom:10px">Полагодити</button>' +
+          '<p style="color:#8b9099;font-size:14px;margin:16px 0 6px">Що саме сталося — покажи це розробнику:</p>' +
+          '<pre style="white-space:pre-wrap;word-break:break-word;background:#15171b;border-radius:10px;' +
+          'padding:12px;font-size:12px;color:#ff5b52;margin:0">' + String(what).replace(/[<&]/g, ' ') + '</pre>' +
+          '</div>';
+
+        document.getElementById('fixBtn').onclick = function () {
+          var done = function () { location.reload(true); };
+          try {
+            var jobs = [];
+            if (window.caches) jobs.push(caches.keys().then(function (names) {
+              return Promise.all(names.map(function (n) { return caches.delete(n); }));
+            }));
+            if (navigator.serviceWorker) jobs.push(
+              navigator.serviceWorker.getRegistrations().then(function (regs) {
+                return Promise.all(regs.map(function (r) { return r.unregister(); }));
+              }));
+            Promise.all(jobs).then(done, done);
+          } catch (e) { done(); }
+        };
+      }
+
+      window.addEventListener('error', function (event) {
+        // Помилки завантаження окремих картинок екран не валять.
+        if (event.target && event.target !== window && event.target.tagName === 'IMG') return;
+        show(event.message || ('Не завантажився файл: ' + (event.target && event.target.src)));
+      }, true);
+
+      window.addEventListener('unhandledrejection', function (event) {
+        show((event.reason && (event.reason.stack || event.reason.message)) || event.reason);
+      });
+
+      // Якщо через чотири секунди на екрані досі порожньо — щось не доїхало
+      // мовчки, і про це теж треба сказати вголос.
+      setTimeout(function () {
+        var screen = document.getElementById('screen');
+        if (screen && !screen.childElementCount) {
+          show('Застосунок не намалював жодного екрана за чотири секунди. Найчастіше це означає, що один із файлів не завантажився.');
+        }
+      }, 4000);
+    })();
+  </script>
+
   <script type="module" src="src/app.js"></script>
 </body>
 </html>

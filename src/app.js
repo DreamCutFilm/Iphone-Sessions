@@ -1,7 +1,8 @@
 // Точка збірки: маршрути, нижня панель вкладок, реакція на зміну даних.
 
 import { el, mount, toast } from './ui/dom.js';
-import { completeGoogleSignIn } from './core/cloud.js';
+import { completeGoogleSignIn, isSignedIn } from './core/cloud.js';
+import { knownCompanies, onContextChange } from './core/context.js';
 import { route, setNotFound, startRouter, navigate, setNavigationListener, rerender } from './ui/router.js';
 import { subscribe, saveNow } from './core/store.js';
 import { isSheetOpen, onSheetClosed } from './ui/sheet.js';
@@ -19,6 +20,7 @@ import { settingsView } from './ui/views/settings.js';
 import { accountView } from './ui/views/account.js';
 import { teamProjectsView } from './ui/views/team-projects.js';
 import { teamProjectView } from './ui/views/team-project.js';
+import { firmView, firmDetailView } from './ui/views/firm.js';
 
 const TABS = [
   { path: '/overview', label: 'Огляд', mark: '◎' },
@@ -29,6 +31,17 @@ const TABS = [
   { path: '/ideas', label: 'Ідеї', mark: '✳' },
   { path: '/calc', label: 'Кіно', mark: 'ƒ' },
 ];
+
+// Вкладка фірми зʼявляється лише тоді, коли фірма справді є. Порожній пункт,
+// який щоразу веде в «спершу увійди», лише займав би місце в тісному ряду —
+// а на iPhone кожна вкладка забирає ширину в решти.
+const FIRM_TAB = { path: '/firm', label: 'Фірма', mark: '⌂' };
+
+function visibleTabs() {
+  return isSignedIn() && knownCompanies().length
+    ? [...TABS.slice(0, 5), FIRM_TAB]
+    : TABS;
+}
 
 const screen = document.querySelector('#screen');
 const tabBar = document.querySelector('#tabbar');
@@ -58,10 +71,12 @@ route('/settings', () => render(settingsView));
 route('/account', () => render(accountView));
 route('/team-projects', () => render(teamProjectsView));
 route('/team-projects/:id', ({ id }) => render(() => teamProjectView(id)));
+route('/firm', () => render(firmView));
+route('/firm/:id', ({ id }) => render(() => firmDetailView(id)));
 setNotFound(() => navigate('/overview', { replace: true }));
 
 function buildTabs(currentPath) {
-  const nodes = TABS.map((tab) => {
+  const nodes = visibleTabs().map((tab) => {
     const isActive = currentPath === tab.path || currentPath.startsWith(`${tab.path}/`);
     return el(
       'button.tab',
@@ -127,6 +142,13 @@ completeGoogleSignIn()
     toast(error?.message ?? 'Не вдалося ввійти через Google', { error: true });
     rerender();
   });
+
+// Перемикання «Моє / фірма» змінює і вміст екрана, і те, яка вкладка
+// підсвічена, — тому перемальовуємо і те, і те.
+onContextChange(() => {
+  buildTabs(window.location.hash.replace(/^#/, '') || '/overview');
+  rerender();
+});
 
 startRouter();
 startReminders();

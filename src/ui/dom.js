@@ -62,6 +62,20 @@ export function clear(node) {
   while (node.firstChild) node.firstChild.remove();
 }
 
+/**
+ * Додати до вузла тільки те, що справді є.
+ *
+ * Звичайний append домальовує «null» словом, якщо йому дати порожнечу, —
+ * і на екрані зʼявляється рядок «null» посеред інтерфейсу. Блоки, яких може
+ * не бути (фірма, підказка, попередження), проходять через це.
+ */
+export function appendIf(container, ...children) {
+  for (const child of children) {
+    if (child !== null && child !== undefined && child !== false) container.append(child);
+  }
+  return container;
+}
+
 export function mount(container, ...children) {
   clear(container);
   append(container, children);

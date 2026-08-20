@@ -9,7 +9,8 @@
 // застосунок, будь-яка помилка в ньому відкривала б чужі гроші; тепер
 // найгірше, що може статися від помилки тут, — щось не покажеться.
 
-import { rpc } from './cloud.js';
+import { rpc, query } from './cloud.js';
+import { withMemory, forget } from './cache.js';
 import { projectById, projectFinance, projectPayouts, tasksOfProject, billingEstimates } from './selectors.js';
 import { itemCost, describeItemCount } from './estimates.js';
 
@@ -159,64 +160,149 @@ export async function unpublishProject(companyId, localId) {
   return rpc('unpublish_project', { p_company: companyId, p_local_id: localId });
 }
 
-/** Проєкти фірми — уже підрізані базою під того, хто питає. */
-export async function companyProjects(companyId) {
-  const rows = await rpc('company_projects', { p_company: companyId });
-  return (rows ?? []).map(fromRow);
+/**
+ * Проєкти фірми — уже підрізані базою під того, хто питає.
+ *
+ * Повертає { value, at, fresh }. Форма з памʼяттю однакова для всіх читань:
+ * екран мусить знати, свіже це чи вчорашнє, і сказати про це людині.
+ */
+export function companyProjects(companyId) {
+  return withMemory(`projects.${companyId}`, async () => {
+    const rows = await rpc('company_projects', { p_company: companyId });
+    return (rows ?? []).map(fromRow);
+  });
 }
 
-export async function projectPayoutRows(projectId) {
-  const rows = await rpc('project_payouts', { p_project: projectId });
-  return (rows ?? []).map((row) => ({
-    name: row.name || 'Без імені',
-    role: row.role_title || '',
-    amount: Number(row.amount) || 0,
-    currency: row.currency,
-    isMine: Boolean(row.is_mine),
-  }));
+/** Забути памʼять фірми — після виходу з неї чи зміни ролі. */
+export function forgetCompany(companyId) {
+  for (const key of ['projects', 'tasks']) forget(`${key}.${companyId}`);
 }
 
-export async function sharedTasks(projectId) {
-  const rows = await rpc('project_tasks', { p_project: projectId });
-  return (rows ?? []).map((row) => ({
+export function projectPayoutRows(projectId) {
+  return withMemory(`payouts.${projectId}`, async () => {
+    const rows = await rpc('project_payouts', { p_project: projectId });
+    return (rows ?? []).map((row) => ({
+      name: row.name || 'Без імені',
+      role: row.role_title || '',
+      amount: Number(row.amount) || 0,
+      currency: row.currency,
+      isMine: Boolean(row.is_mine),
+    }));
+  });
+}
+
+export function sharedTasks(projectId) {
+  return withMemory(`ptasks.${projectId}`, async () => {
+    const rows = await rpc('project_tasks', { p_project: projectId });
+    return (rows ?? []).map((row) => ({
+      id: row.id,
+      title: row.title,
+      assignee: row.assignee_name ?? '',
+      due: row.due,
+      done: Boolean(row.done),
+      priority: row.priority,
+      notes: row.notes ?? '',
+      isMine: Boolean(row.is_mine),
+    }));
+  });
+}
+
+export function sharedItems(projectId) {
+  return withMemory(`pitems.${projectId}`, async () => {
+    const rows = await rpc('project_items', { p_project: projectId });
+    return (rows ?? []).map((row) => ({
+      title: row.title,
+      category: row.category ?? '',
+      count: row.count_label ?? '',
+      ownership: row.ownership ?? '',
+      cost: Number(row.cost) || 0,
+      currency: row.currency,
+      notes: row.notes ?? '',
+    }));
+  });
+}
+
+/**
+ * Кошториси проєкту. Приходять лише тому, кому видно суми клієнта, —
+ * решті сервер не віддає жодного рядка, і це не помилка, а правило.
+ */
+export function firmEstimates(projectId) {
+  return withMemory(`estimates.${projectId}`, async () => {
+    const rows = await query('company_estimates', {
+      select: 'id,project_id,title,status,currency,discount_percent,tax_percent,'
+        + 'client_notes,notes,updated_at,'
+        + 'company_estimate_items(id,title,category,equipment_id,crew_id,internal_only,'
+        + 'unit,quantity,shifts,unit_price,unit_cost,notes,position)',
+      filter: `project_id=eq.${projectId}`,
+      order: 'created_at.asc',
+    });
+
+    return (rows ?? []).map(estimateFromRow);
+  });
+}
+
+/** Усі кошториси фірми — для екрана грошей. */
+export function allFirmEstimates(companyId) {
+  return withMemory(`allestimates.${companyId}`, async () => {
+    const rows = await query('company_estimates', {
+      select: 'id,project_id,title,status,currency,updated_at,'
+        + 'company_estimate_items(id,category,internal_only,quantity,shifts,unit_price,unit_cost)',
+      filter: `company_id=eq.${companyId}`,
+      order: 'updated_at.desc',
+    });
+
+    return (rows ?? []).map(estimateFromRow);
+  });
+}
+
+function estimateFromRow(row) {
+  return {
     id: row.id,
+    projectId: row.project_id ?? null,
     title: row.title,
-    assignee: row.assignee_name ?? '',
-    due: row.due,
-    done: Boolean(row.done),
-    priority: row.priority,
-    notes: row.notes ?? '',
-    isMine: Boolean(row.is_mine),
-  }));
-}
-
-export async function sharedItems(projectId) {
-  const rows = await rpc('project_items', { p_project: projectId });
-  return (rows ?? []).map((row) => ({
-    title: row.title,
-    category: row.category ?? '',
-    count: row.count_label ?? '',
-    ownership: row.ownership ?? '',
-    cost: Number(row.cost) || 0,
+    status: row.status,
     currency: row.currency,
+    discountPercent: Number(row.discount_percent) || 0,
+    taxPercent: Number(row.tax_percent) || 0,
+    clientNotes: row.client_notes ?? '',
     notes: row.notes ?? '',
-  }));
+    updatedAt: row.updated_at,
+    items: (row.company_estimate_items ?? [])
+      .map((item) => ({
+        id: item.id,
+        title: item.title,
+        category: item.category,
+        equipmentId: item.equipment_id ?? null,
+        crewId: item.crew_id ?? null,
+        internalOnly: Boolean(item.internal_only),
+        unit: item.unit,
+        quantity: Number(item.quantity) || 0,
+        shifts: Number(item.shifts) || 0,
+        unitPrice: Number(item.unit_price) || 0,
+        unitCost: Number(item.unit_cost) || 0,
+        notes: item.notes ?? '',
+        position: Number(item.position) || 0,
+      }))
+      .sort((a, b) => a.position - b.position),
+  };
 }
 
 /** Мої задачі по всій фірмі — для звичайного екрана задач. */
-export async function myFirmTasks(companyId) {
-  const rows = await rpc('my_company_tasks', { p_company: companyId });
-  return (rows ?? []).map((row) => ({
-    id: row.id,
-    title: row.title,
-    due: row.due,
-    done: Boolean(row.done),
-    priority: row.priority,
-    notes: row.notes ?? '',
-    projectId: row.project_id,
-    projectTitle: row.project_title,
-    isMine: Boolean(row.is_mine),
-  }));
+export function myFirmTasks(companyId) {
+  return withMemory(`tasks.${companyId}`, async () => {
+    const rows = await rpc('my_company_tasks', { p_company: companyId });
+    return (rows ?? []).map((row) => ({
+      id: row.id,
+      title: row.title,
+      due: row.due,
+      done: Boolean(row.done),
+      priority: row.priority,
+      notes: row.notes ?? '',
+      projectId: row.project_id,
+      projectTitle: row.project_title,
+      isMine: Boolean(row.is_mine),
+    }));
+  });
 }
 
 /**

@@ -18,7 +18,8 @@ import { formatMoney, currencySymbol, CURRENCIES } from '../core/locale.js';
 import { navigate } from './router.js';
 import { chip } from './components.js';
 import { isSignedIn } from '../core/cloud.js';
-import { activeCompany, teamOf, roleLabel } from '../core/account.js';
+import { teamOf, roleLabel } from '../core/account.js';
+import { currentCompany } from '../core/context.js';
 
 // --- Техніка --------------------------------------------------------------
 
@@ -213,7 +214,7 @@ function emailField(draft, getNameInput, getRoleInput) {
   });
 
   const list = el('div.team-pick');
-  const company = isSignedIn() ? activeCompany() : null;
+  const company = isSignedIn() ? currentCompany() : null;
 
   let open = false;
   let team = null;      // null — ще не питали

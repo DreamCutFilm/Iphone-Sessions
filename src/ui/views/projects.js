@@ -1,6 +1,6 @@
 // Проєкти: список за стадіями та картка окремого проєкту.
 
-import { el, emptyState, toast } from '../dom.js';
+import { el, emptyState, toast, appendIf } from '../dom.js';
 import { pageHeader, sectionTitle, projectCard, taskRow, chip, fab, dueVariant, formatMoney } from '../components.js';
 import { editProject, editTask } from '../editors.js';
 import { editEstimate } from '../estimate-forms.js';
@@ -16,12 +16,122 @@ import { mapsLink, isValidCoordinate, formatCoordinates } from '../../core/geo.j
 import { navigate } from '../router.js';
 import { confirmSheet } from '../sheet.js';
 import { isSignedIn } from '../../core/cloud.js';
-import { activeCompany, canManage } from '../../core/account.js';
+import { canManage } from '../../core/account.js';
+import { currentCompany, inCompany } from '../../core/context.js';
+import { contextBar, freshnessNote } from '../context-bar.js';
+import { permissionsOf } from '../../core/roles.js';
+import { editFirmProject } from '../firm-project-forms.js';
 import {
   buildProjectPayload, unlinkedPayouts, publishProject, unpublishProject, companyProjects,
 } from '../../core/sharing.js';
 
 export function projectsView() {
+  return inCompany() ? firmProjectsView() : myProjectsView();
+}
+
+/**
+ * Проєкти фірми як головний список.
+ *
+ * Коли застосунок дивиться очима фірми, її проєкти — це не додаток збоку,
+ * а весь зміст екрана. У людини з команди своїх проєктів немає взагалі,
+ * і показувати їй «створи перший» замість завтрашньої зйомки — знущання.
+ */
+function firmProjectsView() {
+  const company = currentCompany();
+  const page = el('div.page');
+
+  const mayEdit = permissionsOf(company).can_edit;
+
+  page.append(pageHeader('Проєкти', {
+    subtitle: company.name,
+    action: mayEdit
+      ? el('button.icon-btn', {
+          type: 'button',
+          'aria-label': 'Новий проєкт фірми',
+          onclick: () => editFirmProject(null, company, () => navigate('/projects')),
+        }, '+')
+      : null,
+  }));
+  appendIf(page, contextBar());
+
+  const host = el('div');
+  page.append(host);
+  loadFirmProjects(host, company);
+
+  return page;
+}
+
+async function loadFirmProjects(host, company) {
+  host.replaceChildren(el('p.settings-note', 'Завантажую…'));
+
+  let result;
+  try {
+    result = await companyProjects(company.id);
+  } catch (error) {
+    host.replaceChildren(
+      el('p.settings-note', error?.message ?? 'Немає звʼязку з сервером'),
+      el('div.form', el('button.btn.btn--ghost.btn--wide', {
+        type: 'button', onclick: () => loadFirmProjects(host, company),
+      }, 'Спробувати ще раз')),
+    );
+    return;
+  }
+
+  const projects = result.value;
+  const parts = [];
+
+  const stale = freshnessNote(result, () => loadFirmProjects(host, company));
+  if (stale) parts.push(stale);
+
+  if (!projects.length) {
+    parts.push(emptyState(
+      `У «${company.name}» поки порожньо`,
+      mayEditHere(company)
+        ? 'Створи перший — кнопкою «+» угорі. Або перемкнись на «Моє» й перенеси туди свій.'
+        : 'Проєкти зʼявляться, коли керівник їх заведе.',
+      mayEditHere(company)
+        ? el('button.btn.btn--primary', {
+            type: 'button',
+            onclick: () => editFirmProject(null, company, () => navigate('/projects')),
+          }, 'Створити проєкт')
+        : null,
+    ));
+  } else {
+    // Групуємо так само, як власні: за стадією виробництва. Людина не має
+    // перевчатися, перемкнувшись на фірму.
+    for (const status of PROJECT_STATUSES) {
+      const group = projects
+        .filter((project) => project.status === status.id)
+        .sort((a, b) => (a.deadline ?? '9999').localeCompare(b.deadline ?? '9999'));
+      if (!group.length) continue;
+
+      parts.push(sectionTitle(status.label, el('span.section-hint', String(group.length))));
+      parts.push(el('div.list', group.map(firmProjectCard)));
+    }
+  }
+
+  host.replaceChildren(...parts);
+}
+
+function firmProjectCard(project) {
+  const meta = [chip(statusLabel(project.status), `status-${project.status}`)];
+  if (project.deadline) meta.push(chip(`⚑ ${describeDue(project.deadline)}`, dueVariant(project.deadline)));
+  if (project.shootDays.length) meta.push(chip(`🎥 ${project.shootDays.length}`));
+  if (project.location) meta.push(chip(`📍 ${project.location}`));
+  if (project.myPayout > 0) meta.push(chip(formatMoneyIn(project.myPayout, project.currency), 'money'));
+
+  return el(
+    'article.card',
+    { onclick: () => navigate(`/team-projects/${project.id}`) },
+    el('div.card-body',
+      el('p.card-title', project.title),
+      project.client && el('p.card-sub', project.client),
+      el('div.row-meta', meta)),
+    el('span.card-chevron', '›'),
+  );
+}
+
+function myProjectsView() {
   const state = getState();
   const page = el('div.page');
 
@@ -30,17 +140,17 @@ export function projectsView() {
     action: el('button.icon-btn', { type: 'button', 'aria-label': 'Новий проєкт', onclick: () => editProject() }, '+'),
   }));
 
+  appendIf(page, contextBar());
+
   if (!state.projects.length) {
     page.append(emptyState(
       'Своїх проєктів ще немає',
       'Проєкт — це рамка для дедлайну, знімальних днів, задач та ідей.',
       el('button.btn.btn--primary', { type: 'button', onclick: () => editProject() }, 'Створити перший'),
     ));
-    page.append(firmProjectsBlock(state));
     return page;
   }
 
-  // Групуємо за стадією у природному порядку виробництва.
   for (const status of PROJECT_STATUSES) {
     const group = state.projects
       .filter((project) => project.status === status.id)
@@ -57,58 +167,8 @@ export function projectsView() {
     })));
   }
 
-  page.append(firmProjectsBlock(state));
   page.append(fab('Новий проєкт', () => editProject()));
   return page;
-}
-
-/**
- * Проєкти фірми просто в списку проєктів.
- *
- * Для людини в команді це взагалі єдині проєкти, які в неї є: локально в неї
- * порожньо. Тримати їх на окремому екрані означало б, що вона відкриває
- * «Проєкти» і бачить «порожньо — створи перший», хоча завтра зйомка.
- *
- * Свої, вже опубліковані, сюди не потрапляють удруге: локальна картка
- * повніша, і в ній є що редагувати.
- */
-function firmProjectsBlock(state) {
-  if (!isSignedIn()) return null;
-  const company = activeCompany();
-  if (!company) return null;
-
-  const host = el('div');
-  const mine = new Set(state.projects.map((project) => project.id));
-
-  companyProjects(company.id)
-    .then((projects) => {
-      const others = projects.filter((project) => !mine.has(project.localId));
-      if (!others.length) return;
-
-      host.replaceChildren(
-        sectionTitle(company.name, el('span.section-hint', 'фірма')),
-        el('div.list', others.map((project) => el(
-          'article.card',
-          { onclick: () => navigate(`/team-projects/${project.id}`) },
-          el('div.card-body',
-            el('p.card-title', project.title),
-            project.client && el('p.card-sub', project.client),
-            el('div.row-meta', [
-              chip(statusLabel(project.status), `status-${project.status}`),
-              project.deadline ? chip(`⚑ ${describeDue(project.deadline)}`, dueVariant(project.deadline)) : null,
-              project.shootDays.length ? chip(`🎥 ${project.shootDays.length}`) : null,
-              project.myPayout > 0 ? chip(formatMoneyIn(project.myPayout, project.currency), 'money') : null,
-            ].filter(Boolean))),
-          el('span.card-chevron', '›'),
-        ))),
-      );
-    })
-    .catch(() => {
-      // Мережі немає — локальні проєкти від цього не постраждали,
-      // і сваритися посеред списку немає за що.
-    });
-
-  return host;
 }
 
 export function projectDetailView(projectId) {
@@ -292,7 +352,7 @@ export function projectDetailView(projectId) {
 function sharingBlock(state, project) {
   if (!isSignedIn()) return null;
 
-  const company = activeCompany();
+  const company = currentCompany();
   if (!company) return null;
 
   if (!canManage(company.role)) {
@@ -377,4 +437,9 @@ function deadlineLabel(deadline) {
   const human = describeDue(deadline);
   const date = formatDate(deadline);
   return human === date ? `⚑ Здача ${date}` : `⚑ Здача ${date} · ${human}`;
+}
+
+/** Чи можу я тут щось міняти. Винесено, бо питається з двох місць. */
+function mayEditHere(company) {
+  return permissionsOf(company).can_edit;
 }

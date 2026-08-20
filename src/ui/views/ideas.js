@@ -1,6 +1,8 @@
 // Ідеї — швидкий блокнот для задумів, які приходять не за розкладом.
 
-import { el, emptyState } from '../dom.js';
+import { el, emptyState, appendIf } from '../dom.js';
+import { inCompany } from '../../core/context.js';
+import { contextBar } from '../context-bar.js';
 import { pageHeader, sectionTitle, chip, fab } from '../components.js';
 import { editIdea } from '../editors.js';
 import { getState, patchItem } from '../../core/store.js';
@@ -18,6 +20,14 @@ export function ideasView() {
     subtitle: `${state.ideas.length} збережено`,
     action: el('button.icon-btn', { type: 'button', 'aria-label': 'Нова ідея', onclick: () => editIdea() }, '+'),
   }));
+
+  appendIf(page, contextBar());
+
+  if (inCompany()) {
+    page.append(el('p.settings-note',
+      'Ідеї поки що особисті — вони лишаються на цьому телефоні незалежно від того, '
+      + 'у якій фірмі ти працюєш. Спільні ідеї фірми зʼявляться згодом.'));
+  }
 
   if (!state.ideas.length) {
     page.append(emptyState(

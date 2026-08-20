@@ -11,6 +11,7 @@ import {
   textInput, textArea, selectInput, segmented,
 } from '../sheet.js';
 import { navigate } from '../router.js';
+import { getContext, setContext, MINE } from '../../core/context.js';
 import {
   isSignedIn, currentUser, signIn, signUp, signOut, resetPassword,
   googleSignInUrl, CloudError,
@@ -19,7 +20,7 @@ import {
   myCompanies, createCompany, updateCompany, searchCompanies, requestJoin, myRequests,
   teamOf, pendingRequests, approveRequest, declineRequest, changeRole, removeMember,
   createInvite, activeInvites, revokeInvite, redeemInvite,
-  makeSlug, isValidSlug, roleLabel, canManage, setActiveCompany, ROLES,
+  makeSlug, isValidSlug, roleLabel, canManage, ROLES,
 } from '../../core/account.js';
 
 /** Обгортка навколо мережевої дії: показує помилку людською мовою. */
@@ -67,7 +68,7 @@ export function accountView() {
         confirmLabel: 'Вийти',
         onConfirm: async () => {
           await signOut();
-          setActiveCompany(null);
+          setContext(MINE);
           toast('Ти вийшов');
           navigate('/account');
         },
@@ -204,7 +205,7 @@ async function loadCompanies(host) {
   }
 
   if (!companies.length) {
-    setActiveCompany(null);
+    setContext(MINE);
     const requests = (await run(() => myRequests())) ?? [];
     const waiting = requests.filter((request) => request.status === 'pending');
 
@@ -228,7 +229,11 @@ async function loadCompanies(host) {
   }
 
   // Перша фірма стає поточною: саме з нею працюватиме екран проєктів.
-  setActiveCompany(companies[0]);
+  // Список фірм памʼятає account.myCompanies — тут лишається тільки
+  // подбати, щоб людина, яка щойно створила першу фірму, у ній і опинилась.
+  if (getContext().kind !== 'company') {
+    setContext({ kind: 'company', ...companies[0] });
+  }
 
   host.replaceChildren();
   for (const company of companies) {
@@ -285,8 +290,10 @@ async function loadTeam(host, company, rootHost) {
   parts.push(el('div.list', team.map((member) => el(
     'article.row',
     {
-      onclick: company.role === 'owner' && !member.isMe
-        ? () => memberSheet(member, company, host, rootHost)
+      // Ролями керує сторінка фірми: там видно і рівні, і власні ролі
+      // фірми поруч. Дві різні панелі для одного й того самого розходяться.
+      onclick: canManage(company.role) && !member.isMe
+        ? () => navigate(`/firm/${company.id}`)
         : null,
     },
     el('span.row-mark', member.isMe ? '🙋' : '👤'),
@@ -369,45 +376,6 @@ async function loadTeam(host, company, rootHost) {
   }
 
   host.replaceChildren(...parts);
-}
-
-function memberSheet(member, company, teamHost, rootHost) {
-  let role = member.role;
-
-  openSheet({
-    title: member.name || 'Учасник',
-    body: formBody(
-      field('Роль', selectInput(
-        ROLES.map((item) => ({ value: item.id, label: `${item.label} — ${item.hint}` })),
-        { value: role, onchange: (event) => { role = event.target.value; } },
-      )),
-    ),
-    actions: [
-      el('button.btn.btn--danger', {
-        type: 'button',
-        onclick: () => confirmSheet({
-          title: 'Прибрати з команди?',
-          message: `${member.name || 'Ця людина'} втратить доступ до проєктів фірми.`,
-          onConfirm: async () => {
-            await run(() => removeMember(member.id));
-            toast('Прибрано з команди');
-            loadTeam(teamHost, company, rootHost);
-          },
-        }),
-      }, 'Прибрати'),
-      el('button.btn.btn--primary', {
-        type: 'button',
-        onclick: async () => {
-          if (role !== member.role) {
-            await run(() => changeRole(member.id, role));
-            toast(`Роль змінено: ${roleLabel(role)}`);
-          }
-          closeSheet();
-          loadTeam(teamHost, company, rootHost);
-        },
-      }, 'Зберегти'),
-    ],
-  });
 }
 
 function createCompanySheet(host) {
