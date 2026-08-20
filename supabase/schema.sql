@@ -1619,3 +1619,170 @@ grant execute on function public.my_company_tasks(uuid) to authenticated;
 grant execute on function public.unpublish_project(uuid, text) to authenticated;
 grant execute on function public.company_projects(uuid) to authenticated;
 grant execute on function public.project_payouts(uuid) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 13. Ідеї фірми
+-- ---------------------------------------------------------------------------
+-- Ідея — річ дешева й особиста: записав кадр, який спав на думку в машині.
+-- Більшість таких так і лишається при собі. Але частину варто показати
+-- команді — і саме тому це окрема дія, а не автоматичне вивантаження
+-- всього блокнота.
+--
+-- Дозволу тут немає навмисно: ідея нікому не коштує грошей, і ховати її
+-- за роллю означало б, що людина з камерою не побачить референсу, який
+-- для неї ж і зберегли.
+
+create table if not exists public.company_ideas (
+  id          uuid primary key default gen_random_uuid(),
+  company_id  uuid not null references public.companies on delete cascade,
+  project_id  uuid references public.shared_projects on delete set null,
+  -- Звідки приїхала з телефона: щоб повторна публікація оновлювала ту саму
+  -- ідею, а не плодила копії.
+  local_id    text,
+  title       text not null,
+  body        text,
+  tags        text[] not null default '{}',
+  author_id   uuid references public.profiles (id) on delete set null,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  unique (company_id, local_id)
+);
+
+create index if not exists company_ideas_idx on public.company_ideas (company_id, created_at desc);
+
+alter table public.company_ideas enable row level security;
+
+-- Бачить уся команда. Прибрати може той, хто поділився, або керівник:
+-- людина має право передумати щодо власного запису.
+drop policy if exists company_ideas_select on public.company_ideas;
+create policy company_ideas_select on public.company_ideas for select
+  using (public.is_member(company_id));
+
+drop policy if exists company_ideas_insert on public.company_ideas;
+create policy company_ideas_insert on public.company_ideas for insert
+  with check (public.is_member(company_id) and author_id = auth.uid());
+
+drop policy if exists company_ideas_update on public.company_ideas;
+create policy company_ideas_update on public.company_ideas for update
+  using (author_id = auth.uid() or public.can(company_id, 'edit'));
+
+drop policy if exists company_ideas_delete on public.company_ideas;
+create policy company_ideas_delete on public.company_ideas for delete
+  using (author_id = auth.uid() or public.can(company_id, 'edit'));
+
+-- Ідеї разом з іменем того, хто поділився: без імені список читається
+-- як анонімна дошка оголошень, і питати «а чия це думка?» ніде.
+create or replace function public.company_idea_feed(p_company uuid)
+returns table (
+  id uuid, local_id text, title text, body text, tags text[],
+  project_id uuid, project_title text,
+  author_name text, is_mine boolean, created_at timestamptz
+)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select
+    i.id, i.local_id, i.title, i.body, i.tags,
+    i.project_id, p.title,
+    coalesce(pr.full_name, 'Хтось із команди'),
+    coalesce(i.author_id = auth.uid(), false),
+    i.created_at
+  from public.company_ideas i
+  left join public.shared_projects p on p.id = i.project_id
+  left join public.profiles pr on pr.id = i.author_id
+  where i.company_id = p_company and public.is_member(i.company_id)
+  order by i.created_at desc;
+$$;
+
+grant execute on function public.company_idea_feed(uuid) to authenticated;
+
+-- Публікація ідеї. Робиться функцією, а не прямим записом, з двох причин:
+-- по-перше, повторна публікація має оновити ту саму ідею, а не додати
+-- близнюка; по-друге, ідея на телефоні привʼязана до особистого проєкту,
+-- і звʼязати її з фірмовим може лише база — застосунок фірмових
+-- ідентифікаторів не знає.
+create or replace function public.publish_idea(p_company uuid, p_idea jsonb)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target uuid;
+  found  uuid;
+begin
+  if not public.is_member(p_company) then
+    raise exception 'Немає доступу до фірми';
+  end if;
+
+  select id into target
+  from public.shared_projects
+  where company_id = p_company
+    and local_id is not null
+    and local_id = nullif(p_idea->>'project_local_id', '')
+  limit 1;
+
+  insert into public.company_ideas
+    (company_id, project_id, local_id, title, body, tags, author_id, updated_at)
+  values (
+    p_company,
+    target,
+    nullif(p_idea->>'local_id', ''),
+    coalesce(nullif(trim(p_idea->>'title'), ''), 'Без назви'),
+    nullif(p_idea->>'body', ''),
+    coalesce(
+      (select array_agg(value) from jsonb_array_elements_text(
+        case when jsonb_typeof(p_idea->'tags') = 'array' then p_idea->'tags' else '[]'::jsonb end)),
+      '{}'
+    ),
+    auth.uid(),
+    now()
+  )
+  on conflict (company_id, local_id) do update
+    set title      = excluded.title,
+        body       = excluded.body,
+        tags       = excluded.tags,
+        project_id = excluded.project_id,
+        updated_at = now()
+  returning id into found;
+
+  return found;
+end;
+$$;
+
+-- Прибрати з фірми. Своє — завжди; чуже — той, кому дозволено редагувати.
+create or replace function public.unpublish_idea(p_company uuid, p_local_id text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from public.company_ideas
+  where company_id = p_company
+    and local_id = p_local_id
+    and (author_id = auth.uid() or public.can(p_company, 'edit'));
+end;
+$$;
+
+-- Де вже опубліковано мої ідеї: щоб на екрані ідей було видно, що саме
+-- команда вже бачить, і не публікувати вдруге наосліп.
+create or replace function public.my_published_ideas(p_company uuid)
+returns table (local_id text, id uuid)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select i.local_id, i.id
+  from public.company_ideas i
+  where i.company_id = p_company
+    and i.author_id = auth.uid()
+    and i.local_id is not null;
+$$;
+
+grant execute on function public.publish_idea(uuid, jsonb) to authenticated;
+grant execute on function public.unpublish_idea(uuid, text) to authenticated;
+grant execute on function public.my_published_ideas(uuid) to authenticated;
