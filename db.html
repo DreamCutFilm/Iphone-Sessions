@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Схема бази — DreamCut App</title>
+  <meta name="theme-color" content="#0b0c0e">
+  <link rel="apple-touch-icon" href="assets/icons/icon-180.png">
+
+  <!-- Сторінка навмисно окрема від застосунку й нічого з нього не тягне.
+       Її відкривають раз на кілька тижнів, з телефона, щоб оновити базу, —
+       і в цей момент вона має просто працювати, без модулів і маршрутів. -->
+  <style>
+    :root {
+      --bg: #0b0c0e; --surface: #15171b; --line: #282c34;
+      --text: #f2f3f5; --muted: #8b9099; --accent: #ffb020; --ok: #4ad991;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: calc(env(safe-area-inset-top, 0px) + 20px) 16px
+              calc(env(safe-area-inset-bottom, 0px) + 32px);
+      background: var(--bg); color: var(--text);
+      font: 16px/1.5 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      -webkit-text-size-adjust: 100%;
+    }
+    h1 { font-size: 24px; margin: 0 0 6px; letter-spacing: -0.02em; }
+    .sub { color: var(--muted); margin: 0 0 20px; font-size: 15px; }
+
+    .btn {
+      display: block; width: 100%; min-height: 54px;
+      border: 0; border-radius: 14px;
+      font: 600 17px inherit; cursor: pointer; margin-bottom: 10px;
+      padding: 14px 16px;
+    }
+    .btn--copy { background: var(--accent); color: #0b0c0e; }
+    .btn--copy.is-done { background: var(--ok); }
+    .btn--copy:disabled { opacity: 0.5; }
+    .btn--link {
+      background: var(--surface); color: var(--text);
+      border: 1px solid var(--line);
+      text-align: center; text-decoration: none;
+    }
+
+    .steps { background: var(--surface); border-radius: 14px; padding: 4px 18px 14px; margin: 22px 0; }
+    .steps h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+    .steps li { margin-bottom: 8px; }
+
+    .note { color: var(--muted); font-size: 14px; margin: 14px 0; }
+    .warn { color: var(--accent); }
+
+    /* Текст схеми лишається на сторінці: якщо кнопка з якоїсь причини
+       не спрацює, людина має бачити, що саме вона копіює, і мати змогу
+       виділити це руками. */
+    textarea {
+      width: 100%; height: 220px;
+      background: var(--surface); color: var(--muted);
+      border: 1px solid var(--line); border-radius: 12px;
+      padding: 12px; font: 12px/1.4 ui-monospace, Menlo, monospace;
+      resize: vertical;
+    }
+  </style>
+</head>
+<body>
+  <h1>Схема бази</h1>
+  <p class="sub" id="status">Завантажую…</p>
+
+  <button class="btn btn--copy" id="copy" disabled>Копіювати схему</button>
+
+  <a class="btn btn--link" id="editor"
+     href="https://supabase.com/dashboard/project/whbxhdnbydjibkqtispm/sql/new"
+     target="_blank" rel="noopener">Відкрити SQL Editor у Supabase →</a>
+
+  <div class="steps">
+    <h2>Що робити</h2>
+    <ol>
+      <li>Тапни <b>«Копіювати схему»</b></li>
+      <li>Тапни <b>«Відкрити SQL Editor»</b></li>
+      <li>Тапни у велике порожнє поле, тримай палець → <b>Вставити</b></li>
+      <li>Кнопка <b>Run</b></li>
+      <li>Має зʼявитися <b>Success. No rows returned</b></li>
+    </ol>
+  </div>
+
+  <p class="note">
+    Наявні дані не постраждають: файл написаний так, щоб виконуватись
+    повторно скільки завгодно разів.
+  </p>
+
+  <p class="note">Те, що копіюється:</p>
+  <textarea id="sql" readonly spellcheck="false"></textarea>
+
+  <script>
+    (function () {
+      var status = document.getElementById('status');
+      var button = document.getElementById('copy');
+      var area = document.getElementById('sql');
+      var sql = '';
+
+      // Схема береться з того самого сайту, а не вшивається сюди. Інакше
+      // сторінка тихо застаріла б на першому ж оновленні бази — і людина
+      // виконала б учорашній файл, будучи певною, що виконує сьогоднішній.
+      fetch('supabase/schema.sql?v=' + Date.now())
+        .then(function (response) {
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+          return response.text();
+        })
+        .then(function (text) {
+          sql = text;
+          area.value = text;
+          var lines = text.split('\n').length;
+          var kb = Math.round(text.length / 1024);
+          status.textContent = lines + ' рядків · ' + kb + ' КБ';
+          button.disabled = false;
+        })
+        .catch(function (error) {
+          status.innerHTML = '<span class="warn">Не вдалося завантажити схему: '
+            + String(error.message).replace(/[<&]/g, ' ') + '</span>';
+          area.value = 'Перевір інтернет і онови сторінку.';
+        });
+
+      button.addEventListener('click', function () {
+        if (!sql) return;
+
+        var done = function () {
+          button.textContent = '✓ Скопійовано';
+          button.classList.add('is-done');
+          setTimeout(function () {
+            button.textContent = 'Копіювати схему';
+            button.classList.remove('is-done');
+          }, 2500);
+        };
+
+        // Сучасний шлях. На iPhone він працює лише в межах дотику до кнопки —
+        // тому виклик стоїть саме тут, а не в жодному then().
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(sql).then(done, fallback);
+        } else {
+          fallback();
+        }
+
+        // Запасний шлях для старіших Safari: виділяємо текст і копіюємо
+        // старою командою. Виглядає незграбно, зате працює скрізь.
+        function fallback() {
+          area.removeAttribute('readonly');
+          area.focus();
+          area.setSelectionRange(0, area.value.length);
+          try {
+            document.execCommand('copy');
+            done();
+          } catch (error) {
+            button.textContent = 'Не вийшло — скопіюй з поля нижче';
+          }
+          area.setAttribute('readonly', 'readonly');
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
