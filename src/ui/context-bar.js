@@ -8,6 +8,7 @@
 // «а я зараз де?» — і без неї фірмові дані виглядали б як власні.
 
 import { el } from './dom.js';
+import { t } from '../core/i18n.js';
 import { getContext, setContext, knownCompanies, MINE } from '../core/context.js';
 import { isSignedIn } from '../core/cloud.js';
 import { rerender } from './router.js';
@@ -59,7 +60,7 @@ export function freshnessNote(result, onRetry = null) {
   if (!result || result.fresh) return null;
 
   const note = el('p.settings-note.settings-note--stale',
-    `⚠ Немає звʼязку. Показано те, що завантажилось ${describeAge(result.at)}.`);
+    t('⚠ Немає звʼязку. Показано те, що завантажилось {when}.', { when: describeAge(result.at) }));
 
   if (!onRetry) return note;
 

@@ -3,6 +3,7 @@
 // Бітрейти наведені приблизні, з офіційних таблиць виробників. Для кодеків
 // зі змінним бітрейтом (BRAW, R3D, H.265) реальна цифра плаває, тому
 // в інтерфейсі завжди закладаємо запас.
+import { t } from '../i18n.js';
 
 /** Бітрейт у Мбіт/с на «рідній» кадровій частоті baseFps. */
 export const CODECS = [
@@ -96,17 +97,17 @@ export function cardsNeeded({ totalGb, cardGb }) {
 
 export function formatDuration(minutes) {
   if (!Number.isFinite(minutes) || minutes < 0) return '—';
-  if (minutes < 1) return `${Math.round(minutes * 60)} с`;
+  if (minutes < 1) return `${Math.round(minutes * 60)} ${t('с')}`;
   const whole = Math.floor(minutes);
   const hours = Math.floor(whole / 60);
   const mins = whole % 60;
-  if (hours === 0) return `${whole} хв`;
-  return mins === 0 ? `${hours} год` : `${hours} год ${mins} хв`;
+  if (hours === 0) return `${whole} ${t('хв')}`;
+  return mins === 0 ? `${hours} ${t('год')}` : `${hours} ${t('год')} ${mins} ${t('хв')}`;
 }
 
 export function formatSize(gigabytes) {
   if (!Number.isFinite(gigabytes)) return '—';
-  if (gigabytes < 1) return `${Math.round(gigabytes * 1000)} МБ`;
-  if (gigabytes < 1000) return `${gigabytes.toFixed(gigabytes < 10 ? 2 : 0)} ГБ`;
-  return `${(gigabytes / 1000).toFixed(2)} ТБ`;
+  if (gigabytes < 1) return `${Math.round(gigabytes * 1000)} ${t('МБ')}`;
+  if (gigabytes < 1000) return `${gigabytes.toFixed(gigabytes < 10 ? 2 : 0)} ${t('ГБ')}`;
+  return `${(gigabytes / 1000).toFixed(2)} ${t('ТБ')}`;
 }

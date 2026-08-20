@@ -1,6 +1,7 @@
 // Форми кошторисів і каталогу техніки.
 
 import { el, toast } from './dom.js';
+import { t } from '../core/i18n.js';
 import {
   openSheet, closeSheet, confirmSheet, field, formBody,
   textInput, textArea, selectInput, numberInput, segmented,
@@ -63,12 +64,12 @@ export function editEquipment(existing = null, defaults = {}) {
       draft.ownership,
       (value) => { draft.ownership = value; },
     )),
-    field(`Ціна за зміну, ${symbol}`, numberInput({
+    field(t('Ціна за зміну, {symbol}', { symbol }), numberInput({
       value: draft.dayRate ?? '',
       placeholder: '0',
       oninput: (event) => { draft.dayRate = parseMoney(event.target.value); },
     }), 'Скільки береш із клієнта.'),
-    field(`Собівартість за зміну, ${symbol}`, numberInput({
+    field(t('Собівартість за зміну, {symbol}', { symbol }), numberInput({
       value: draft.dayCost ?? '',
       placeholder: '0',
       oninput: (event) => { draft.dayCost = parseMoney(event.target.value); },
@@ -89,7 +90,7 @@ export function editEquipment(existing = null, defaults = {}) {
             type: 'button',
             onclick: () => confirmSheet({
               title: 'Видалити з каталогу?',
-              message: `«${equipment.title}» зникне з каталогу. Позиції в уже складених кошторисах залишаться — ціни там зафіксовані.`,
+              message: t('«{name}» зникне з каталогу. Позиції в уже складених кошторисах залишаться — ціни там зафіксовані.', { name: equipment.title }),
               onConfirm: () => { removeItem('equipment', equipment.id); toast('Видалено з каталогу'); },
             }),
           }, 'Видалити')
@@ -134,12 +135,12 @@ export function editCrew(existing = null, defaults = {}) {
       onclick: () => { draft.role = role; roleInput.value = role; },
     }, role))),
     field('Імʼя', nameInput, 'Можна лишити порожнім — тоді це просто роль, яку ще треба закрити.'),
-    field(`Гонорар за зміну, ${symbol}`, numberInput({
+    field(t('Гонорар за зміну, {symbol}', { symbol }), numberInput({
       value: draft.fee ?? '',
       placeholder: '0',
       oninput: (event) => { draft.fee = parseMoney(event.target.value); },
     }), 'Скільки ти платиш цій людині.'),
-    field(`Ставка клієнту за зміну, ${symbol}`, numberInput({
+    field(t('Ставка клієнту за зміну, {symbol}', { symbol }), numberInput({
       value: draft.rate ?? '',
       placeholder: 'стільки ж, скільки гонорар',
       oninput: (event) => { draft.rate = parseMoney(event.target.value); },
@@ -167,7 +168,7 @@ export function editCrew(existing = null, defaults = {}) {
             type: 'button',
             onclick: () => confirmSheet({
               title: 'Прибрати з команди?',
-              message: `«${crewLabel(member)}» зникне з каталогу. Гонорари у вже складених кошторисах залишаться — суми там зафіксовані.`,
+              message: t('«{name}» зникне з каталогу. Гонорари у вже складених кошторисах залишаться — суми там зафіксовані.', { name: crewLabel(member) }),
               onConfirm: () => { removeItem('crew', member.id); toast('Прибрано з команди'); },
             }),
           }, 'Видалити')
@@ -255,7 +256,7 @@ function emailField(draft, getNameInput, getRoleInput) {
 
     open = false;
     render();
-    toast(`${person.name || person.email} — гонорар дійде`);
+    toast(t('{name} — гонорар дійде', { name: person.name || person.email }));
   }
 
   function render() {
@@ -332,7 +333,7 @@ export function editEstimate(existing = null, defaults = {}) {
       onchange: (event) => { draft.projectId = event.target.value || null; },
     })),
     field('Валюта', selectInput(
-      CURRENCIES.map((currency) => ({ value: currency.code, label: `${currency.label} (${currency.symbol})` })),
+      CURRENCIES.map((currency) => ({ value: currency.code, label: `${t(currency.label)} (${currency.symbol})` })),
       { value: draft.currency, onchange: (event) => { draft.currency = event.target.value; } },
     ), 'Записується в сам кошторис, щоб зміна валюти в налаштуваннях не переписала вже надіслані суми.'),
     field('Стан', selectInput(
@@ -378,7 +379,7 @@ export function editEstimate(existing = null, defaults = {}) {
             type: 'button',
             onclick: () => confirmSheet({
               title: 'Видалити кошторис?',
-              message: `«${estimate.title}» зникне разом з усіма позиціями.`,
+              message: t('«{name}» зникне разом з усіма позиціями.', { name: estimate.title }),
               onConfirm: () => {
                 removeItem('estimates', estimate.id);
                 navigate('/estimates');
@@ -415,7 +416,7 @@ export function editEstimateItem(estimate, existingItem = null) {
 
   const total = el('p.item-total');
   const refreshTotal = () => {
-    total.textContent = `Сума позиції: ${formatMoney(itemAmount(draft), estimate.currency)}`;
+    total.textContent = t('Сума позиції: {sum}', { sum: formatMoney(itemAmount(draft), estimate.currency) });
   };
   refreshTotal();
 
@@ -445,12 +446,12 @@ export function editEstimateItem(estimate, existingItem = null) {
         oninput: (event) => { draft.shifts = parseMoney(event.target.value) ?? 0; refreshTotal(); },
       })),
     ),
-    field(`Ціна за одиницю, ${symbol}`, numberInput({
+    field(t('Ціна за одиницю, {symbol}', { symbol }), numberInput({
       value: draft.unitPrice || '',
       placeholder: '0',
       oninput: (event) => { draft.unitPrice = parseMoney(event.target.value) ?? 0; refreshTotal(); },
     })),
-    field(`${draft.category === 'crew' ? 'Гонорар людині' : 'Собівартість'}, ${symbol}`, numberInput({
+    field(`${draft.category === 'crew' ? t('Гонорар людині') : t('Собівартість')}, ${symbol}`, numberInput({
       value: draft.unitCost || '',
       placeholder: '0',
       oninput: (event) => { draft.unitCost = parseMoney(event.target.value) ?? 0; },
@@ -519,7 +520,7 @@ export function openItemPicker(estimate, { source = 'equipment' } = {}) {
   const addToEstimate = (item, label) => {
     patchItem('estimates', estimate.id, { items: [...estimate.items, item] });
     closeSheet();
-    toast(`Додано: ${label}`);
+    toast(t('Додано: {name}', { name: label }));
   };
 
   const render = () => {
@@ -552,8 +553,8 @@ export function openItemPicker(estimate, { source = 'equipment' } = {}) {
           el('div.row-body',
             el('p.row-title', crewLabel(member)),
             el('p.row-note',
-              `гонорар ${formatMoney(member.fee ?? 0, estimate.currency)}` +
-              (rate !== (member.fee ?? 0) ? ` · клієнту ${formatMoney(rate, estimate.currency)}` : ''))),
+              `${t('гонорар')} ${formatMoney(member.fee ?? 0, estimate.currency)}` +
+              (rate !== (member.fee ?? 0) ? ` · ${t('клієнту')} ${formatMoney(rate, estimate.currency)}` : ''))),
           el('span.card-chevron', '+'),
         ));
       }
@@ -577,7 +578,7 @@ export function openItemPicker(estimate, { source = 'equipment' } = {}) {
         { onclick: () => addToEstimate(itemFromEquipment(item), item.title) },
         el('div.row-body',
           el('p.row-title', item.title),
-          el('p.row-note', `${categoryLabel(item.category)} · ${formatMoney(item.dayRate ?? 0, estimate.currency)} за зміну`)),
+          el('p.row-note', `${categoryLabel(item.category)} · ${t('{sum} за зміну', { sum: formatMoney(item.dayRate ?? 0, estimate.currency) })}`)),
         el('span.card-chevron', '+'),
       ));
     }

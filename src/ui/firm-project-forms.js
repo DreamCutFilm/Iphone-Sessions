@@ -5,6 +5,7 @@
 // після успіху — інакше людина була б певна, що зберегла, а не зберегла.
 
 import { el, toast } from './dom.js';
+import { t } from '../core/i18n.js';
 import {
   openSheet, closeSheet, confirmSheet, field, formBody,
   textInput, textArea, selectInput, numberInput, dateInput, segmented,
@@ -107,11 +108,11 @@ export function editFirmProject(existing, company, onDone) {
         oninput: (event) => { draft.location = event.target.value; },
       })),
       field('Валюта', selectInput(
-        CURRENCIES.map((currency) => ({ value: currency.code, label: `${currency.label} (${currency.symbol})` })),
+        CURRENCIES.map((currency) => ({ value: currency.code, label: `${t(currency.label)} (${currency.symbol})` })),
         { value: draft.currency, onchange: (event) => { draft.currency = event.target.value; } },
       )),
       field('Стадія', selectInput(
-        PROJECT_STATUSES.map((status) => ({ value: status.id, label: `${status.label} — ${status.hint}` })),
+        PROJECT_STATUSES.map((status) => ({ value: status.id, label: `${t(status.label)} — ${t(status.hint)}` })),
         { value: draft.status, onchange: (event) => { draft.status = event.target.value; } },
       )),
       field('Нотатки', textArea({
@@ -126,7 +127,7 @@ export function editFirmProject(existing, company, onDone) {
             type: 'button',
             onclick: () => confirmSheet({
               title: 'Видалити проєкт?',
-              message: `«${existing.title}» зникне у всієї команди разом із задачами й кошторисами.`,
+              message: t('«{name}» зникне у всієї команди разом із задачами й кошторисами.', { name: existing.title }),
               onConfirm: () => run(() => removeFirmProject(company.id, existing.id), 'Видалено', onDone),
             }),
           }, 'Видалити')
@@ -202,7 +203,7 @@ export function editFirmTask(existing, company, projectId, onDone) {
             type: 'button',
             onclick: () => confirmSheet({
               title: 'Видалити задачу?',
-              message: `«${existing.title}» зникне в усієї команди.`,
+              message: t('«{name}» зникне в усієї команди.', { name: existing.title }),
               onConfirm: () => run(() => removeFirmTask(company.id, projectId, existing.id), 'Видалено', onDone),
             }),
           }, 'Видалити')
@@ -245,7 +246,7 @@ export function editFirmEstimate(existing, company, projectId, onDone) {
       ), 'Гроші проєкту рахуються за затвердженим кошторисом; якщо його немає — '
         + 'за надісланим, а тоді за чернеткою.'),
       field('Валюта', selectInput(
-        CURRENCIES.map((currency) => ({ value: currency.code, label: `${currency.label} (${currency.symbol})` })),
+        CURRENCIES.map((currency) => ({ value: currency.code, label: `${t(currency.label)} (${currency.symbol})` })),
         { value: draft.currency, onchange: (event) => { draft.currency = event.target.value; } },
       )),
       field('Знижка, %', numberInput({
@@ -295,7 +296,7 @@ export function firmItemPicker(estimate, company, onDone) {
     const position = (estimate.items?.length ?? 0);
     await run(
       () => addEstimateItem(company.id, estimate, { ...item, position }),
-      `Додано: ${label}`,
+      t('Додано: {name}', { name: label }),
       onDone,
     );
   };
@@ -399,11 +400,11 @@ export function editFirmItem(item, estimate, company, onDone) {
         UNITS.map((unit) => ({ value: unit, label: unit })),
         { value: draft.unit, onchange: (event) => { draft.unit = event.target.value; } },
       )),
-      field(`Ціна клієнту за одиницю, ${symbol}`, numberInput({
+      field(t('Ціна клієнту за одиницю, {symbol}', { symbol }), numberInput({
         value: draft.unitPrice,
         oninput: (event) => { draft.unitPrice = Number(event.target.value) || 0; },
       })),
-      field(`Собівартість за одиницю, ${symbol}`, numberInput({
+      field(t('Собівартість за одиницю, {symbol}', { symbol }), numberInput({
         value: draft.unitCost,
         oninput: (event) => { draft.unitCost = Number(event.target.value) || 0; },
       }), 'Скільки це коштує фірмі. Команді видно саме цю суму, а не ціну клієнту.'),
@@ -438,10 +439,10 @@ function saveButton(action) {
     onclick: async (event) => {
       const button = event.currentTarget;
       button.disabled = true;
-      button.textContent = 'Зберігаю…';
+      button.textContent = t('Зберігаю…');
       await action();
       button.disabled = false;
-      button.textContent = 'Зберегти';
+      button.textContent = t('Зберегти');
     },
   }, 'Зберегти');
 }

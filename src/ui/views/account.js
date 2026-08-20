@@ -5,6 +5,7 @@
 // сам показує, що він завантажується або що звʼязку немає.
 
 import { el, toast } from '../dom.js';
+import { t, localeTag } from '../../core/i18n.js';
 import { pageHeader, sectionTitle, chip } from '../components.js';
 import {
   openSheet, closeSheet, confirmSheet, field, formBody,
@@ -159,11 +160,11 @@ function authSheet(mode) {
         onclick: async (event) => {
           const button = event.currentTarget;
           if (!draft.email.trim() || !draft.password) {
-            error.textContent = 'Заповни пошту й пароль';
+            error.textContent = t('Заповни пошту й пароль');
             return;
           }
           button.disabled = true;
-          button.textContent = 'Хвилинку…';
+          button.textContent = t('Хвилинку…');
           error.textContent = '';
 
           const result = await run(
@@ -172,7 +173,7 @@ function authSheet(mode) {
           );
 
           button.disabled = false;
-          button.textContent = isSignup ? 'Створити' : 'Увійти';
+          button.textContent = isSignup ? t('Створити') : t('Увійти');
 
           if (result === null) return;
 
@@ -319,7 +320,7 @@ async function loadTeam(host, company, rootHost) {
             type: 'button',
             onclick: async () => {
               await run(() => approveRequest(request.id, 'member'));
-              toast(`${request.name} у команді`);
+              toast(t('{name} у команді', { name: request.name }));
               loadTeam(host, company, rootHost);
             },
           }, 'Прийняти'),
@@ -342,7 +343,7 @@ async function loadTeam(host, company, rootHost) {
         'article.row',
         el('div.row-body',
           el('p.row-title.invite-code', invite.code),
-          el('p.row-note', `${roleLabel(invite.role)} · діє до ${new Date(invite.expires_at).toLocaleDateString('uk-UA')}`)),
+          el('p.row-note', t('{role} · діє до {date}', { role: t(roleLabel(invite.role)), date: new Date(invite.expires_at).toLocaleDateString(localeTag()) }))),
         el('button.link', {
           type: 'button',
           onclick: async (event) => {
@@ -364,9 +365,9 @@ async function loadTeam(host, company, rootHost) {
           loadTeam(host, company, rootHost);
           try {
             await navigator.clipboard.writeText(invite.code);
-            toast(`Код ${invite.code} скопійовано`);
+            toast(t('Код {code} скопійовано', { code: invite.code }));
           } catch {
-            toast(`Код: ${invite.code}`);
+            toast(t('Код: {code}', { code: invite.code }));
           }
         },
       }, '+ Створити код запрошення'),
@@ -425,25 +426,25 @@ function createCompanySheet(host) {
       el('button.btn.btn--primary', {
         type: 'button',
         onclick: async (event) => {
-          if (!draft.name.trim()) { error.textContent = 'Впиши назву'; return; }
+          if (!draft.name.trim()) { error.textContent = t('Впиши назву'); return; }
           if (!isValidSlug(draft.slug)) {
-            error.textContent = 'Коротке імʼя: латиниця, цифри й дефіс, від 2 символів';
+            error.textContent = t('Коротке імʼя: латиниця, цифри й дефіс, від 2 символів');
             return;
           }
           const button = event.currentTarget;
           button.disabled = true;
-          button.textContent = 'Створюю…';
+          button.textContent = t('Створюю…');
 
           const created = await run(() => createCompany(draft), {
             onError: (message) => { error.textContent = message; },
           });
 
           button.disabled = false;
-          button.textContent = 'Створити';
+          button.textContent = t('Створити');
           if (!created) return;
 
           closeSheet();
-          toast(`Фірму «${draft.name}» створено`);
+          toast(t('Фірму «{name}» створено', { name: draft.name }));
           loadCompanies(host);
         },
       }, 'Створити'),
@@ -522,13 +523,13 @@ function inviteCodeSheet(host) {
       el('button.btn.btn--primary', {
         type: 'button',
         onclick: async () => {
-          if (!code.trim()) { error.textContent = 'Впиши код'; return; }
+          if (!code.trim()) { error.textContent = t('Впиши код'); return; }
           const company = await run(() => redeemInvite(code), {
             onError: (message) => { error.textContent = message; },
           });
           if (!company) return;
           closeSheet();
-          toast(`Ти в команді «${company.name}»`);
+          toast(t('Ти в команді «{company}»', { company: company.name }));
           loadCompanies(host);
         },
       }, 'Приєднатися'),

@@ -19,7 +19,7 @@ import {
 } from '../src/core/geo.js';
 import { taskOrder, projectPayouts, projectFinance } from '../src/core/selectors.js';
 import { createTask, createProject } from '../src/core/models.js';
-import { formatMoney, currencySymbol, getCurrency, getLanguage, CURRENCIES, LANGUAGES } from '../src/core/locale.js';
+import { formatMoney, currencySymbol, getCurrency, languageInfo, CURRENCIES, LANGUAGES } from '../src/core/locale.js';
 import { createEquipment, unitMargin } from '../src/core/equipment.js';
 import { makeSlug, isValidSlug, generateCode, roleLabel, canManage } from '../src/core/account.js';
 import { createCrew, crewLabel, clientRate, crewMargin, normalizeCrew } from '../src/core/crew.js';
@@ -409,12 +409,10 @@ test('валюти: усі чотири на місці й мають знак',
   }
 });
 
-test('мови: українська готова, польська поки позначена як неготова', () => {
-  assert.equal(getLanguage('uk').ready, true);
-  assert.equal(getLanguage('pl').ready, false);
-  // Невідома мова не має ламати застосунок.
-  assert.equal(getLanguage('вигадка').id, 'uk');
-  assert.deepEqual(LANGUAGES.map((language) => language.id), ['uk', 'pl']);
+test('мови: три на вибір, невідома не ламає застосунок', () => {
+  assert.deepEqual(LANGUAGES.map((language) => language.id), ['uk', 'pl', 'en']);
+  assert.equal(languageInfo('pl').native, 'Polski');
+  assert.equal(languageInfo('вигадка').id, 'uk');
 });
 
 // --- Кошториси ------------------------------------------------------------

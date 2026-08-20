@@ -6,6 +6,7 @@
 // із сервера взагалі.
 
 import { el, emptyState, toast, appendIf } from '../dom.js';
+import { t } from '../../core/i18n.js';
 import { pageHeader, sectionTitle, chip, dueVariant } from '../components.js';
 import { navigate } from '../router.js';
 import { isSignedIn } from '../../core/cloud.js';
@@ -112,7 +113,7 @@ async function load(host, projectId) {
     parts.push(el('a.btn.btn--ghost.btn--wide.map-link',
       { href: navigation, target: '_blank', rel: 'noopener' },
       isValidCoordinate(project.latitude, project.longitude)
-        ? `🗺 Прокласти маршрут · ${formatCoordinates(project.latitude, project.longitude, 4)}`
+        ? `🗺 ${t('Прокласти маршрут')} · ${formatCoordinates(project.latitude, project.longitude, 4)}`
         : '🗺 Знайти локацію в Картах'));
   }
 
@@ -182,7 +183,7 @@ async function loadTasks(host, project, company, mayEdit, reload) {
           type: 'button',
           onclick: () => editFirmTask(null, company, project.id, reload),
         }, '+ додати')
-      : el('span.section-hint', `${open.length} з ${tasks.length}`),
+      : el('span.section-hint', `${open.length} ${t('з')} ${tasks.length}`),
   )];
   parts.push(el('div.list', open.map((task) => taskRow(task, { company, project, mayEdit, reload }))));
 
@@ -262,8 +263,10 @@ async function loadItems(host, project) {
   // дінеться, а по орендоване треба їхати, і часто не туди, де знімаєш.
   if (rented.length) {
     parts.push(el('p.settings-note',
-      `${plural(rented.length, 'позиція', 'позиції', 'позицій')} `
-      + `${rented.length === 1 ? 'береться' : 'беруться'} в ренталі — по неї треба заїхати.`));
+      t('{items} {verb} в ренталі — по неї треба заїхати.', {
+        items: plural(rented.length, 'позиція', 'позиції', 'позицій'),
+        verb: rented.length === 1 ? t('береться') : t('беруться'),
+      })));
   }
 
   parts.push(el('div.list', items.map((item) => el(
@@ -277,7 +280,7 @@ async function loadItems(host, project) {
         item.count ? chip(item.count) : null,
         chip(item.ownership === 'rented' ? 'орендуємо' : 'своя',
           item.ownership === 'rented' ? 'warn' : ''),
-        item.cost > 0 ? chip(`оренда ${formatMoney(item.cost, item.currency)}`) : null)),
+        item.cost > 0 ? chip(`${t('оренда')} ${formatMoney(item.cost, item.currency)}`) : null)),
   ))));
 
   host.replaceChildren(...parts);
@@ -346,7 +349,7 @@ async function loadEstimates(host, project, company, mayEdit, reload) {
                   chip(`${item.quantity > 1 ? `${item.quantity} × ` : ''}`
                     + `${item.shifts} ${unitLabel(item.unit, item.shifts)}`),
                   item.internalOnly ? chip('не в рахунку', 'warn') : null,
-                  chip(`нам ${formatMoney(item.quantity * item.shifts * item.unitCost, estimate.currency)}`))),
+                  chip(`${t('нам')} ${formatMoney(item.quantity * item.shifts * item.unitCost, estimate.currency)}`))),
               el('span.item-amount',
                 formatMoney(item.internalOnly ? 0 : item.quantity * item.shifts * item.unitPrice, estimate.currency)),
             )))
@@ -450,5 +453,7 @@ function moneyRow(label, value, variant = '') {
 function deadlineLabel(deadline) {
   const human = describeDue(deadline);
   const date = formatDate(deadline);
-  return human === date ? `⚑ Здача ${date}` : `⚑ Здача ${date} · ${human}`;
+  return human === date
+    ? `⚑ ${t('Здача')} ${date}`
+    : `⚑ ${t('Здача')} ${date} · ${human}`;
 }

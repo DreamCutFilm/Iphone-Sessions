@@ -6,6 +6,7 @@
 // Замість них скрізь одне питання: це число прийшло чи ні.
 
 import { el, emptyState } from '../dom.js';
+import { t } from '../../core/i18n.js';
 import { pageHeader, sectionTitle, chip, dueVariant } from '../components.js';
 import { navigate } from '../router.js';
 import { isSignedIn } from '../../core/cloud.js';
@@ -121,16 +122,16 @@ function moneyBlock(project) {
   const rows = el('div.row-meta');
   const money = (value) => formatMoney(value, project.currency);
 
-  if (project.fee !== null) rows.append(chip(`Клієнт: ${money(project.fee)}`, 'money'));
-  if (project.rental > 0) rows.append(chip(`Оренда: ${money(project.rental)}`));
+  if (project.fee !== null) rows.append(chip(`${t('Клієнт')}: ${money(project.fee)}`, 'money'));
+  if (project.rental > 0) rows.append(chip(`${t('Оренда')}: ${money(project.rental)}`));
   if (project.payoutTotal !== null && project.payoutTotal > 0) {
-    rows.append(chip(`Гонорари: ${money(project.payoutTotal)}`));
+    rows.append(chip(`${t('Гонорари')}: ${money(project.payoutTotal)}`));
   }
-  if (project.myPayout > 0) rows.append(chip(`Мій гонорар: ${money(project.myPayout)}`, 'money'));
+  if (project.myPayout > 0) rows.append(chip(`${t('Мій гонорар')}: ${money(project.myPayout)}`, 'money'));
 
   const profit = sharedProfit(project);
   if (profit !== null) {
-    rows.append(chip(`Заробіток: ${money(profit)}`, profit >= 0 ? 'money' : 'danger'));
+    rows.append(chip(`${t('Заробіток')}: ${money(profit)}`, profit >= 0 ? 'money' : 'danger'));
   }
 
   return rows;

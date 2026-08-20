@@ -1,6 +1,7 @@
 // Кошториси: список, картка з позиціями, клієнтський вигляд.
 
 import { el, emptyState, toast, appendIf } from '../dom.js';
+import { t } from '../../core/i18n.js';
 import { pageHeader, sectionTitle, chip, fab, statTile } from '../components.js';
 import { openSheet, closeSheet } from '../sheet.js';
 import { editEstimate, editEstimateItem, openItemPicker } from '../estimate-forms.js';
@@ -15,7 +16,7 @@ import { formatMoney } from '../../core/locale.js';
 import { inCompany, currentCompany } from '../../core/context.js';
 import { contextBar, freshnessNote } from '../context-bar.js';
 import { companyProjects } from '../../core/sharing.js';
-import { formatDate, toDateOnly } from '../../core/dates.js';
+import { formatDate, toDateOnly, plural } from '../../core/dates.js';
 
 export function estimatesView() {
   if (inCompany()) return firmEstimatesView();
@@ -67,7 +68,7 @@ async function loadFirmMoney(host, company) {
   if (stale) parts.push(stale);
 
   if (!projects.length) {
-    parts.push(emptyState('Порожньо', `У «${company.name}» ще немає опублікованих проєктів.`));
+    parts.push(emptyState('Порожньо', t('У «{company}» ще немає опублікованих проєктів.', { company: company.name })));
     host.replaceChildren(...parts);
     return;
   }
@@ -82,7 +83,7 @@ async function loadFirmMoney(host, company) {
 
     parts.push(el('div.tool-hero.hero--inline',
       el('p.tool-hero-value', formatMoney(income - spend, currency)),
-      el('p.tool-hero-label', `лишається фірмі по ${projects.length} проєктах`)));
+      el('p.tool-hero-label', t('лишається фірмі по {count} проєктах', { count: projects.length }))));
 
     parts.push(el('div.result',
       moneyLine('Платять клієнти', formatMoney(income, currency)),
@@ -101,9 +102,9 @@ async function loadFirmMoney(host, company) {
   parts.push(sectionTitle('По проєктах'));
   parts.push(el('div.list', projects.map((project) => {
     const meta = [];
-    if (project.fee !== null) meta.push(chip(`Клієнт: ${formatMoney(project.fee, project.currency)}`, 'money'));
-    if (project.rental > 0) meta.push(chip(`Оренда: ${formatMoney(project.rental, project.currency)}`));
-    if (project.myPayout > 0) meta.push(chip(`Мій гонорар: ${formatMoney(project.myPayout, project.currency)}`, 'money'));
+    if (project.fee !== null) meta.push(chip(`${t('Клієнт')}: ${formatMoney(project.fee, project.currency)}`, 'money'));
+    if (project.rental > 0) meta.push(chip(`${t('Оренда')}: ${formatMoney(project.rental, project.currency)}`));
+    if (project.myPayout > 0) meta.push(chip(`${t('Мій гонорар')}: ${formatMoney(project.myPayout, project.currency)}`, 'money'));
 
     return el(
       'article.card',
@@ -128,7 +129,7 @@ function myEstimatesView() {
   const page = el('div.page');
 
   page.append(pageHeader('Кошториси', {
-    subtitle: `${state.estimates.length} усього`,
+    subtitle: t('{count} усього', { count: state.estimates.length }),
     action: el('button.icon-btn', { type: 'button', 'aria-label': 'Новий кошторис', onclick: () => editEstimate() }, '+'),
   }));
 
@@ -137,9 +138,9 @@ function myEstimatesView() {
   page.append(el(
     'div.catalog-links',
     el('button.btn.btn--ghost', { type: 'button', onclick: () => navigate('/equipment') },
-      `🎒 Техніка · ${state.equipment.length}`),
+      `🎒 ${t('Техніка')} · ${state.equipment.length}`),
     el('button.btn.btn--ghost', { type: 'button', onclick: () => navigate('/crew') },
-      `👤 Команда · ${state.crew.length}`),
+      `👤 ${t('Команда')} · ${state.crew.length}`),
   ));
 
   if (!state.estimates.length) {
@@ -180,8 +181,8 @@ function estimateCard(estimate, state) {
       project && el('p.card-sub', project.title),
       el('div.row-meta',
         chip(formatMoney(totals.total, estimate.currency), 'money'),
-        chip(`${totals.itemCount} позицій`),
-        totals.margin > 0 ? chip(`маржа ${totals.marginPercent}%`) : null),
+        chip(plural(totals.itemCount, 'позиція', 'позиції', 'позицій')),
+        totals.margin > 0 ? chip(`${t('маржа')} ${totals.marginPercent}%`) : null),
     ),
     el('span.card-chevron', '›'),
   );
@@ -220,9 +221,9 @@ export function estimateDetailView(estimateId) {
 
   page.append(el('div.facts',
     chip(estimateStatusLabel(estimate.status), estimate.status === 'approved' ? 'money' : ''),
-    estimate.sentAt ? chip(`Надіслано ${formatDate(toDateOnly(new Date(estimate.sentAt)))}`) : null,
-    estimate.discountPercent > 0 ? chip(`Знижка ${estimate.discountPercent}%`, 'warn') : null,
-    estimate.taxPercent > 0 ? chip(`Податок ${estimate.taxPercent}%`) : null));
+    estimate.sentAt ? chip(`${t('Надіслано')} ${formatDate(toDateOnly(new Date(estimate.sentAt)))}`) : null,
+    estimate.discountPercent > 0 ? chip(`${t('Знижка')} ${estimate.discountPercent}%`, 'warn') : null,
+    estimate.taxPercent > 0 ? chip(`${t('Податок')} ${estimate.taxPercent}%`) : null));
 
   // --- Позиції ---
   const groups = totalsByCategory(estimate);
@@ -242,7 +243,7 @@ export function estimateDetailView(estimateId) {
         el('div.row-body',
           el('p.row-title', item.title),
           el('p.row-note', item.internalOnly
-            ? `${describeItemCount(item)} · виплата ${formatMoney(itemCost(item), estimate.currency)}`
+            ? `${describeItemCount(item)} · ${t('виплата')} ${formatMoney(itemCost(item), estimate.currency)}`
             : `${describeItemCount(item)} × ${formatMoney(item.unitPrice, estimate.currency)}`),
           item.internalOnly ? el('div.row-meta', chip('тільки для мене', 'warn')) : null),
         el('span.item-amount',
@@ -279,7 +280,7 @@ export function estimateDetailView(estimateId) {
           type: 'button',
           onclick: () => {
             patchItem('projects', project.id, { fee: totals.total });
-            toast(`Гонорар проєкту оновлено: ${formatMoney(totals.total, estimate.currency)}`);
+            toast(t('Гонорар проєкту оновлено: {sum}', { sum: formatMoney(totals.total, estimate.currency) }));
           },
         }, '↧ Перенести суму в гонорар проєкту')
       : null,

@@ -4,6 +4,7 @@
 // в метрах — так, як їх називають на майданчику.
 
 import { getSensor, sensorDiagonal } from './sensors.js';
+import { t } from '../i18n.js';
 
 /**
  * Гіперфокальна відстань (мм).
@@ -107,8 +108,8 @@ export function fullFrameEquivalent({ focalMm, sensorId }) {
 export function formatDistance(meters) {
   if (meters === Infinity) return '∞';
   if (!Number.isFinite(meters) || meters < 0) return '—';
-  if (meters < 1) return `${(meters * 100).toFixed(0)} см`;
-  if (meters < 10) return `${meters.toFixed(2)} м`;
-  if (meters < 100) return `${meters.toFixed(1)} м`;
-  return `${Math.round(meters)} м`;
+  if (meters < 1) return `${(meters * 100).toFixed(0)} ${t('см')}`;
+  if (meters < 10) return `${meters.toFixed(2)} ${t('м')}`;
+  if (meters < 100) return `${meters.toFixed(1)} ${t('м')}`;
+  return `${Math.round(meters)} ${t('м')}`;
 }

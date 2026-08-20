@@ -2,6 +2,7 @@
 // Спочатку прострочене, потім сьогоднішнє, потім найближчі дні.
 
 import { el, emptyState, appendIf } from '../dom.js';
+import { t } from '../../core/i18n.js';
 import { pageHeader, sectionTitle, taskRow, statTile, agendaDay, fab, formatMoney, chip, dueVariant } from '../components.js';
 import { isSignedIn } from '../../core/cloud.js';
 import { currentCompany, inCompany } from '../../core/context.js';
@@ -34,7 +35,7 @@ function firmOverview() {
   const page = el('div.page');
 
   page.append(pageHeader(greeting(), {
-    subtitle: `${formatDate(todayISO())}, ${weekdayFull()}`,
+    subtitle: `${formatDate(todayISO())}, ${t(weekdayFull())}`,
     action: el('button.icon-btn', { type: 'button', 'aria-label': 'Налаштування', onclick: () => navigate('/settings') }, '⚙'),
   }));
 
@@ -145,7 +146,7 @@ async function loadFirmOverview(host, company) {
         el('div.row-body',
           el('p.row-title', project.title),
           el('p.row-note', [
-            next ? `Зйомка ${describeDue(next).toLowerCase()}` : project.client,
+            next ? t('Зйомка {when}', { when: describeDue(next).toLowerCase() }) : project.client,
             project.location,
           ].filter(Boolean).join(' · '))),
         el('span.card-chevron', '›'),
@@ -155,7 +156,7 @@ async function loadFirmOverview(host, company) {
 
   if (!projects.length && !tasks.length) {
     parts.push(emptyState(
-      `Поки тихо в «${company.name}»`,
+      t('Поки тихо в «{company}»', { company: company.name }),
       'Зйомок за тобою ще не закріпили. Щойно керівник опублікує проєкт — він зʼявиться тут.',
     ));
   }
@@ -178,7 +179,7 @@ function myOverview() {
   const page = el('div.page');
 
   page.append(pageHeader(greeting(), {
-    subtitle: `${formatDate(todayISO())}, ${weekdayFull()}`,
+    subtitle: `${formatDate(todayISO())}, ${t(weekdayFull())}`,
     action: el('button.icon-btn', { type: 'button', 'aria-label': 'Налаштування', onclick: () => navigate('/settings') }, '⚙'),
   }));
 

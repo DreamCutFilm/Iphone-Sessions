@@ -11,6 +11,7 @@
 // або ввести вручну.
 
 import { el, toast } from './dom.js';
+import { t } from '../core/i18n.js';
 import { openSheet, closeSheet } from './sheet.js';
 import {
   lonLatToTile, tileToLonLat, tileUrl, clampZoom, clampLatitude, wrapLongitude,
@@ -114,7 +115,7 @@ export function openMapPicker({ latitude, longitude, label = '', onPick, onCance
     watchForSilence();
     readout.textContent = formatCoordinates(state.latitude, state.longitude);
     const perPixel = metersPerPixel(state.latitude, state.zoom);
-    scaleNote.textContent = `Масштаб ${state.zoom} · приблизно ${Math.round(perPixel)} м у пікселі`;
+    scaleNote.textContent = t('Масштаб {zoom} · приблизно {meters} м у пікселі', { zoom: state.zoom, meters: Math.round(perPixel) });
   };
 
   // --- Перетягування -------------------------------------------------------
@@ -232,7 +233,7 @@ export function openMapPicker({ latitude, longitude, label = '', onPick, onCance
   };
 
   const sheet = openSheet({
-    title: label ? `Місце: ${label}` : 'Місце на карті',
+    title: label ? t('Місце: {name}', { name: label }) : 'Місце на карті',
     body,
     onClose: () => {
       stopWatching();

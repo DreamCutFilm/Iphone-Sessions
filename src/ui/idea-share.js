@@ -5,6 +5,7 @@
 // для такого не годиться.
 
 import { el, toast } from './dom.js';
+import { t } from '../core/i18n.js';
 import { openSheet, closeSheet, confirmSheet, field, formBody, selectInput } from './sheet.js';
 import { knownCompanies } from '../core/context.js';
 import { publishIdea, unpublishIdea } from '../core/firm-ideas.js';
@@ -42,7 +43,7 @@ export function shareIdea(idea, { onDone = null } = {}) {
       + 'Особистий блокнот лишається на телефоні: туди не потрапить нічого.'));
   } else {
     rows.push(el('p.settings-note',
-      `Ідею побачить уся команда «${companies[0].name}» — з твоїм імʼям. `
+      t('Ідею побачить уся команда «{company}» — з твоїм імʼям. ', { company: companies[0].name })
       + 'Особистий блокнот лишається на телефоні: туди не потрапить нічого.'));
   }
 
@@ -56,7 +57,7 @@ export function shareIdea(idea, { onDone = null } = {}) {
         onclick: async (event) => {
           const button = event.currentTarget;
           button.disabled = true;
-          button.textContent = 'Надсилаю…';
+          button.textContent = t('Надсилаю…');
           try {
             await publishIdea(target, idea);
             closeSheet();
@@ -64,7 +65,7 @@ export function shareIdea(idea, { onDone = null } = {}) {
             if (onDone) onDone();
           } catch (error) {
             button.disabled = false;
-            button.textContent = 'Поділитися';
+            button.textContent = t('Поділитися');
             toast(error?.message ?? 'Не вдалося надіслати', { error: true });
           }
         },
@@ -77,7 +78,7 @@ export function shareIdea(idea, { onDone = null } = {}) {
 export function withdrawIdea(companyId, localId, { title = 'Ідея', onDone = null } = {}) {
   confirmSheet({
     title: 'Прибрати з фірми?',
-    message: `«${title}» зникне у команди. У твоєму блокноті ідея лишиться.`,
+    message: t('«{name}» зникне у команди. У твоєму блокноті ідея лишиться.', { name: title }),
     confirmLabel: 'Прибрати',
     onConfirm: async () => {
       try {

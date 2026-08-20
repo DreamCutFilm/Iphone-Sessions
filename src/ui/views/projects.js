@@ -1,6 +1,7 @@
 // Проєкти: список за стадіями та картка окремого проєкту.
 
 import { el, emptyState, toast, appendIf } from '../dom.js';
+import { t } from '../../core/i18n.js';
 import { pageHeader, sectionTitle, projectCard, taskRow, chip, fab, dueVariant, formatMoney } from '../components.js';
 import { editProject, editTask } from '../editors.js';
 import { editEstimate } from '../estimate-forms.js';
@@ -11,7 +12,7 @@ import { formatMoney as formatMoneyIn } from '../../core/locale.js';
 import { getState } from '../../core/store.js';
 import { projectById, tasksOfProject, projectPayouts, projectFinance } from '../../core/selectors.js';
 import { PROJECT_STATUSES, ACTIVE_STATUSES, statusLabel } from '../../core/models.js';
-import { formatDate, describeDue, weekdayShort, daysUntil } from '../../core/dates.js';
+import { formatDate, describeDue, weekdayShort, daysUntil, plural } from '../../core/dates.js';
 import { mapsLink, isValidCoordinate, formatCoordinates } from '../../core/geo.js';
 import { navigate } from '../router.js';
 import { confirmSheet } from '../sheet.js';
@@ -85,7 +86,7 @@ async function loadFirmProjects(host, company) {
 
   if (!projects.length) {
     parts.push(emptyState(
-      `У «${company.name}» поки порожньо`,
+      t('У «{company}» поки порожньо', { company: company.name }),
       mayEditHere(company)
         ? 'Створи перший — кнопкою «+» угорі. Або перемкнись на «Моє» й перенеси туди свій.'
         : 'Проєкти зʼявляться, коли керівник їх заведе.',
@@ -136,7 +137,7 @@ function myProjectsView() {
   const page = el('div.page');
 
   page.append(pageHeader('Проєкти', {
-    subtitle: `${state.projects.length} своїх`,
+    subtitle: t('{count} своїх', { count: state.projects.length }),
     action: el('button.icon-btn', { type: 'button', 'aria-label': 'Новий проєкт', onclick: () => editProject() }, '+'),
   }));
 
@@ -197,7 +198,7 @@ export function projectDetailView(projectId) {
   if (project.style) facts.push(chip(`🎬 ${project.style}`, 'project'));
   if (project.deadline) facts.push(chip(deadlineLabel(project.deadline), dueVariant(project.deadline)));
   if (project.location) facts.push(chip(`📍 ${project.location}`));
-  if (typeof project.fee === 'number') facts.push(chip(`${formatMoney(project.fee)} · ${project.paid ? 'оплачено' : 'не оплачено'}`, project.paid ? '' : 'money'));
+  if (typeof project.fee === 'number') facts.push(chip(`${formatMoney(project.fee)} · ${project.paid ? t('оплачено') : t('не оплачено')}`, project.paid ? '' : 'money'));
   page.append(el('div.facts', facts));
 
   // Посилання відкриває нативні «Карти» — з майданчика туди й треба доїхати.
@@ -213,7 +214,7 @@ export function projectDetailView(projectId) {
       'a.btn.btn--ghost.btn--wide.map-link',
       { href: navigation, target: '_blank', rel: 'noopener' },
       isValidCoordinate(project.latitude, project.longitude)
-        ? `🗺 Прокласти маршрут · ${formatCoordinates(project.latitude, project.longitude, 4)}`
+        ? `🗺 ${t('Прокласти маршрут')} · ${formatCoordinates(project.latitude, project.longitude, 4)}`
         : '🗺 Знайти локацію в Картах',
     ));
   }
@@ -266,7 +267,7 @@ export function projectDetailView(projectId) {
             el('p.row-title', estimate.title),
             el('div.row-meta',
               chip(estimateStatusLabel(estimate.status)),
-              chip(`${totals.itemCount} позицій`))),
+              chip(plural(totals.itemCount, 'позиція', 'позиції', 'позицій')))),
           el('span.item-amount', formatMoneyIn(totals.total, estimate.currency)),
         );
       }))
@@ -282,7 +283,7 @@ export function projectDetailView(projectId) {
       el('p.tool-hero-value', formatMoneyIn(finance.profit, finance.currency)),
       el('p.tool-hero-label',
         finance.profit >= 0
-          ? `лишається тобі · ${finance.marginPercent}% від суми клієнта`
+          ? t('лишається тобі · {percent}% від суми клієнта', { percent: finance.marginPercent })
           : 'збиток — витрати більші за суму клієнта')));
 
     page.append(el('div.result',
@@ -314,7 +315,7 @@ export function projectDetailView(projectId) {
       el('div.row-body',
         el('p.row-title', person.title),
         el('p.row-note', person.lines.length > 1
-          ? `${person.lines.length} позиції в кошторисах`
+          ? t('{count} позиції в кошторисах', { count: person.lines.length })
           : person.lines[0].entry.count)),
       el('span.item-amount', formatMoneyIn(person.payout, person.currency)),
     ))));
@@ -357,7 +358,7 @@ function sharingBlock(state, project) {
 
   if (!canManage(company.role)) {
     return el('p.settings-note',
-      `Ти в команді «${company.name}». Публікувати проєкти може директор або адміністратор.`);
+      t('Ти в команді «{company}». Публікувати проєкти може директор або адміністратор.', { company: company.name }));
   }
 
   const payload = buildProjectPayload(state, project.id);
@@ -370,15 +371,15 @@ function sharingBlock(state, project) {
     onclick: async (event) => {
       const button = event.currentTarget;
       button.disabled = true;
-      button.textContent = 'Публікую…';
+      button.textContent = t('Публікую…');
       try {
         await publishProject(company.id, getState(), project.id);
-        toast(`Опубліковано у «${company.name}»`);
+        toast(t('Опубліковано у «{company}»', { company: company.name }));
       } catch (error) {
         toast(error?.message ?? 'Немає звʼязку з сервером', { error: true });
       } finally {
         button.disabled = false;
-        button.textContent = '↑ Опублікувати у фірмі';
+        button.textContent = t('↑ Опублікувати у фірмі');
       }
     },
   }, '↑ Опублікувати у фірмі'));
@@ -392,7 +393,7 @@ function sharingBlock(state, project) {
   // нічого. Мовчати про це не можна — помилку помітили б лише через тиждень.
   if (unlinked.length) {
     block.append(el('p.settings-note',
-      `⚠ Не побачать свій гонорар, бо в картці немає пошти: ${unlinked.join(', ')}. `
+      t('⚠ Не побачать свій гонорар, бо в картці немає пошти: {names}. ', { names: unlinked.join(', ') })
       + 'Впиши пошту в каталозі команди — ту саму, якою людина заходить у застосунок.'));
     block.append(el('button.btn.btn--ghost.btn--wide', {
       type: 'button', onclick: () => navigate('/crew'),
@@ -436,7 +437,9 @@ export { ACTIVE_STATUSES };
 function deadlineLabel(deadline) {
   const human = describeDue(deadline);
   const date = formatDate(deadline);
-  return human === date ? `⚑ Здача ${date}` : `⚑ Здача ${date} · ${human}`;
+  return human === date
+    ? `⚑ ${t('Здача')} ${date}`
+    : `⚑ ${t('Здача')} ${date} · ${human}`;
 }
 
 /** Чи можу я тут щось міняти. Винесено, бо питається з двох місць. */

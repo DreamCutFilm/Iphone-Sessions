@@ -1,13 +1,14 @@
 // Форми створення й редагування записів. Усі відкриваються як панелі знизу.
 
 import { el, toast } from './dom.js';
+import { t } from '../core/i18n.js';
 import {
   openSheet, closeSheet, confirmSheet, field, formBody,
   textInput, textArea, selectInput, dateInput, numberInput, segmented,
 } from './sheet.js';
 import { addItem, patchItem, removeItem, getState } from '../core/store.js';
 import { createProject, createTask, createIdea, PROJECT_STATUSES, PROJECT_STYLES, PRIORITIES } from '../core/models.js';
-import { toLocalInputValue, fromLocalInputValue, formatDate, todayISO, expandDateRange } from '../core/dates.js';
+import { toLocalInputValue, fromLocalInputValue, formatDate, todayISO, expandDateRange, plural } from '../core/dates.js';
 import { currencySymbol } from '../core/locale.js';
 import { crewLabel } from '../core/crew.js';
 import { isValidCoordinate, formatCoordinates } from '../core/geo.js';
@@ -106,7 +107,7 @@ export function editTask(existing = null, defaults = {}) {
             type: 'button',
             onclick: () => confirmSheet({
               title: 'Видалити задачу?',
-              message: `«${task.title}» зникне назавжди.`,
+              message: t('«{name}» зникне назавжди.', { name: task.title }),
               onConfirm: () => { removeItem('tasks', task.id); toast('Задачу видалено'); },
             }),
           }, 'Видалити')
@@ -184,7 +185,7 @@ export function editProject(existing = null, draftOverride = null) {
     shootTo.value = '';
 
     if (!fresh.length) toast('Ці дні вже додано');
-    else toast(fresh.length === 1 ? 'День додано' : `Додано ${fresh.length} днів`);
+    else toast(fresh.length === 1 ? 'День додано' : t('Додано {days}', { days: plural(fresh.length, 'день', 'дні', 'днів') }));
   };
 
   const body = formBody(
@@ -216,7 +217,7 @@ export function editProject(existing = null, draftOverride = null) {
     // Карта відкривається окремою панеллю поверх форми, тож форму треба вміти
     // відтворити разом із усім, що вже введено, але ще не збережено.
     locationField(draft, (updated) => editProject(existing, updated)),
-    field(`Гонорар, ${currencySymbol(getState().settings.currency)}`, numberInput({
+    field(t('Гонорар, {symbol}', { symbol: currencySymbol(getState().settings.currency) }), numberInput({
       value: draft.fee ?? '',
       placeholder: '0',
       oninput: (event) => {
@@ -252,7 +253,7 @@ export function editProject(existing = null, draftOverride = null) {
             type: 'button',
             onclick: () => confirmSheet({
               title: 'Видалити проєкт?',
-              message: `«${project.title}» зникне. Задачі та ідеї залишаться, але без привʼязки.`,
+              message: t('«{name}» зникне. Задачі та ідеї залишаться, але без привʼязки.', { name: project.title }),
               onConfirm: () => {
                 removeItem('projects', project.id);
                 navigate('/projects');
@@ -435,7 +436,7 @@ export function editIdea(existing = null, defaults = {}) {
             type: 'button',
             onclick: () => confirmSheet({
               title: 'Видалити ідею?',
-              message: `«${idea.title}» зникне назавжди.`,
+              message: t('«{name}» зникне назавжди.', { name: idea.title }),
               onConfirm: () => { removeItem('ideas', idea.id); toast('Ідею видалено'); },
             }),
           }, 'Видалити')

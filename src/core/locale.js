@@ -5,18 +5,11 @@
 // він лише міняє підпис. Це свідоме рішення: курс змінюється щодня, і тихий
 // перерахунок історичних гонорарів спотворив би дані.
 
-export const LANGUAGES = [
-  { id: 'uk', label: 'Українська', native: 'Українська', ready: true },
-  // Переклад ще не готовий. Вибір зберігається — коли тексти зʼявляться,
-  // застосунок підхопить його без додаткових налаштувань.
-  { id: 'pl', label: 'Польська', native: 'Polski', ready: false },
-];
+// Мова живе в i18n — там, де словники. Тут лишається ре-експорт, бо
+// налаштування питають мову й валюту в одному місці.
+export { LANGUAGES, DEFAULT_LANGUAGE, getLanguage, setLanguage, languageInfo } from './i18n.js';
 
-export const DEFAULT_LANGUAGE = 'uk';
-
-export function getLanguage(id) {
-  return LANGUAGES.find((language) => language.id === id) ?? LANGUAGES[0];
-}
+import { localeTag } from './i18n.js';
 
 export const CURRENCIES = [
   { code: 'UAH', symbol: '₴', position: 'suffix', label: 'Гривня', locale: 'uk-UA' },
@@ -50,7 +43,7 @@ export function formatMoney(value, code = DEFAULT_CURRENCY) {
   const rounded = Math.round(value * 100) / 100;
   const hasCents = !Number.isInteger(rounded);
 
-  const digits = new Intl.NumberFormat('uk-UA', {
+  const digits = new Intl.NumberFormat(localeTag(), {
     minimumFractionDigits: hasCents ? 2 : 0,
     maximumFractionDigits: 2,
   })

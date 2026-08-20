@@ -5,6 +5,7 @@
 // закривалася б клавіатура — користуватися цим на майданчику було б неможливо.
 
 import { el, toast } from '../dom.js';
+import { t } from '../../core/i18n.js';
 import { pageHeader, sectionTitle } from '../components.js';
 import { field, selectInput, numberInput, textInput, segmented } from '../sheet.js';
 import { navigate } from '../router.js';
@@ -168,7 +169,7 @@ function dofTool() {
         field('Дистанція фокуса, м', distanceInput),
         quickPicks([0.5, 1, 1.5, 2, 3, 5, 10, 20], (value) => {
           state.distance = value; distanceInput.value = value; update();
-        }, (value) => `${value} м`),
+        }, (value) => `${value} ${t('м')}`),
       );
     },
     () => {
@@ -191,7 +192,7 @@ function dofTool() {
         resultRow('Перед обʼєктом', formatDistance(dof.inFront)),
         resultRow('За обʼєктом', dof.behind === Infinity ? '∞' : formatDistance(dof.behind)),
         resultRow('Гіперфокал', formatDistance(dof.hyperfocal)),
-        el('p.result-hint', `Кружок нерізкості ${dof.coc} мм · ${dof.sensor.label}`),
+        el('p.result-hint', t('Кружок нерізкості {coc} мм · {sensor}', { coc: dof.coc, sensor: dof.sensor.label })),
         dof.far === Infinity
           ? el('p.result-note', 'Фокус за гіперфокалом — усе до нескінченності різке.')
           : null,
@@ -250,8 +251,8 @@ function fovTool() {
         resultRow('Ширина кадру', formatDistance(coverage.width), 'accent'),
         resultRow('Висота кадру', formatDistance(coverage.height)),
         sectionTitle('Підбір оптики'),
-        resultRow(`Щоб обʼєкт ${state.subject} м зайняв кадр`, suggested ? `${Math.round(suggested)} мм` : '—', 'accent'),
-        resultRow('Еквівалент на повному кадрі', equivalent ? `${Math.round(equivalent)} мм` : '—'),
+        resultRow(t('Щоб обʼєкт {size} м зайняв кадр', { size: state.subject }), suggested ? `${Math.round(suggested)} ${t('мм')}` : '—', 'accent'),
+        resultRow('Еквівалент на повному кадрі', equivalent ? `${Math.round(equivalent)} ${t('мм')}` : '—'),
         resultRow('Кроп-фактор сенсора', `${cropFactor(fov.sensor).toFixed(2)}×`),
       );
 
@@ -314,7 +315,7 @@ function shutterTool() {
         state.angle !== 180
           ? resultRow(
               'Відхилення від 180°',
-              `${(Math.log2(state.angle / 180) >= 0 ? '+' : '')}${Math.log2(state.angle / 180).toFixed(2)} стопа`,
+              `${(Math.log2(state.angle / 180) >= 0 ? '+' : '')}${Math.log2(state.angle / 180).toFixed(2)} ${t('стопа')}`,
             )
           : null,
         el('p.result-note', state.angle > 180
@@ -325,7 +326,7 @@ function shutterTool() {
         ramp ? el('div',
           sectionTitle('Уповільнення'),
           resultRow('Швидкість відтворення', `${ramp.percent.toFixed(1)} %`, 'accent'),
-          resultRow('Коефіцієнт', `${ramp.slowdown.toFixed(2)}× ${ramp.slowdown > 1 ? 'повільніше' : 'швидше'}`),
+          resultRow('Коефіцієнт', `${ramp.slowdown.toFixed(2)}× ${ramp.slowdown > 1 ? t('повільніше') : t('швидше')}`),
           resultRow('1 хв зйомки стане', formatDuration(ramp.slowdown)),
           resultRow('Витримка на зйомці', formatShutter(shutterSpeedFromAngle({ angle: state.angle, fps: state.captureFps }).seconds)),
         ) : null,
@@ -334,7 +335,7 @@ function shutterTool() {
       return {
         hero: {
           value: formatShutter(shutter.seconds),
-          label: `витримка при ${state.angle}° і ${state.fps} к/с`,
+          label: t('витримка при {angle}° і {fps} к/с', { angle: state.angle, fps: state.fps }),
         },
         body,
       };
@@ -384,16 +385,16 @@ function ndTool() {
         between === null
           ? el('p.result-hint', 'Вкажи обидві діафрагми.')
           : el('div',
-              resultRow(`f/${state.from} → f/${state.to}`, `${between > 0 ? '+' : ''}${between.toFixed(2)} стопа`, 'accent'),
+              resultRow(`f/${state.from} → f/${state.to}`, `${between > 0 ? '+' : ''}${between.toFixed(2)} ${t('стопа')}`, 'accent'),
               el('p.result-note', between > 0
-                ? `Відкриваєш діафрагму — світла більше на ${Math.abs(between).toFixed(1)} стопа. Компенсуй ND ${(Math.abs(between) * 0.3).toFixed(1)}.`
-                : `Закриваєш діафрагму — світла менше на ${Math.abs(between).toFixed(1)} стопа.`),
+                ? t('Відкриваєш діафрагму — світла більше на {stops} стопа. Компенсуй ND {nd}.', { stops: Math.abs(between).toFixed(1), nd: (Math.abs(between) * 0.3).toFixed(1) })
+                : t('Закриваєш діафрагму — світла менше на {stops} стопа.', { stops: Math.abs(between).toFixed(1) })),
             ),
         sectionTitle('Готові фільтри'),
         el('div.nd-table', ND_PRESETS.map((preset) => el(
           'div.nd-cell',
           el('span.nd-density', `ND ${preset.density.toFixed(1)}`),
-          el('span.nd-stops', `${preset.stops} ст · ${2 ** preset.stops}×`),
+          el('span.nd-stops', `${preset.stops} ${t('ст')} · ${2 ** preset.stops}×`),
         ))),
       );
 
@@ -401,7 +402,7 @@ function ndTool() {
         hero: nd
           ? {
               value: nd.label,
-              label: `${plural(state.stops, 'стоп', 'стопи', 'стопів')} · у ${Math.round(nd.factor)}× менше світла`,
+              label: `${plural(state.stops, 'стоп', 'стопи', 'стопів')} · ${t('у {factor}× менше світла', { factor: Math.round(nd.factor) })}`,
             }
           : null,
         body,
@@ -429,7 +430,7 @@ function storageTool() {
       return el(
       'div.form',
       field('Кодек', selectInput(
-        CODECS.map((codec) => ({ value: codec.id, label: `${codec.group} · ${codec.label}` })),
+        CODECS.map((codec) => ({ value: codec.id, label: `${t(codec.group)} · ${codec.label}` })),
         {
           value: state.codecId,
           onchange: (event) => {
@@ -462,7 +463,7 @@ function storageTool() {
         oninput: (event) => { state.headroom = Number(event.target.value); update(); },
       })),
       field('Обʼєм однієї карти, ГБ', selectInput(
-        CARD_SIZES.map((size) => ({ value: String(size), label: size >= 1024 ? `${size / 1024} ТБ` : `${size} ГБ` })),
+        CARD_SIZES.map((size) => ({ value: String(size), label: size >= 1024 ? `${size / 1024} ${t('ТБ')}` : `${size} ${t('ГБ')}` })),
         { value: String(state.cardGb), onchange: (event) => { state.cardGb = Number(event.target.value); update(); } },
       )),
       );
@@ -481,12 +482,12 @@ function storageTool() {
 
       const body = el(
         'div',
-        resultRow('Бітрейт', `${Math.round(mbps)} Мбіт/с`),
+        resultRow('Бітрейт', `${Math.round(mbps)} ${t('Мбіт/с')}`),
         resultRow('За годину на камеру', formatSize(size.gbPerHour), 'accent'),
         resultRow('Матеріал з однієї камери', formatSize(size.perCameraGb)),
-        resultRow('Карт на зміну', `${cards} × ${state.cardGb >= 1024 ? `${state.cardGb / 1024} ТБ` : `${state.cardGb} ГБ`}`, 'accent'),
+        resultRow('Карт на зміну', `${cards} × ${state.cardGb >= 1024 ? `${state.cardGb / 1024} ${t('ТБ')}` : `${state.cardGb} ${t('ГБ')}`}`, 'accent'),
         resultRow(`На одну карту вміститься`, perCard ? perCard.label : '—'),
-        el('p.result-note', `Розрахунок для ${codec.label} на ${state.fps} к/с. Для кодеків зі змінним бітрейтом реальний обсяг гуляє — запас ${state.headroom} % уже враховано.`),
+        el('p.result-note', t('Розрахунок для {codec} на {fps} к/с. Для кодеків зі змінним бітрейтом реальний обсяг гуляє — запас {headroom} % уже враховано.', { codec: codec.label, fps: state.fps, headroom: state.headroom })),
       );
 
       return {
@@ -641,12 +642,12 @@ function sunTool() {
       if (!windows) return needInput('Вкажи координати.');
 
       const { times } = windows;
-      const span = (window) => (window ? `${formatTime(window.from)} – ${formatTime(window.to)}` : 'не настає');
-      const length = (window) => (window ? `${window.minutes} хв` : '—');
+      const span = (window) => (window ? `${formatTime(window.from)} – ${formatTime(window.to)}` : t('не настає'));
+      const length = (window) => (window ? `${window.minutes} ${t('хв')}` : '—');
 
       const body = el(
         'div',
-        el('p.result-hint', `${state.label || 'Локація'} · ${formatDate(state.date)}`),
+        el('p.result-hint', `${state.label || t('Локація')} · ${formatDate(state.date)}`),
         el('div.sun-windows',
           sunWindow('Ранкова синя', span(windows.morningBlue), length(windows.morningBlue), 'blue'),
           sunWindow('Ранкова золота', span(windows.morningGolden), length(windows.morningGolden), 'gold'),
@@ -658,7 +659,7 @@ function sunTool() {
         resultRow('Сонячний полудень', formatTime(times.solarNoon)),
         resultRow('Захід', times.sunset ? formatTime(times.sunset) : 'не заходить'),
         resultRow('Світловий день', windows.daylightMinutes !== null
-          ? `${Math.floor(windows.daylightMinutes / 60)} год ${windows.daylightMinutes % 60} хв`
+          ? `${Math.floor(windows.daylightMinutes / 60)} ${t('год')} ${windows.daylightMinutes % 60} ${t('хв')}`
           : '—', 'accent'),
         sectionTitle('Сутінки'),
         resultRow('Громадянські (початок)', times.blueHourStart ? formatTime(times.blueHourStart) : '—'),

@@ -5,6 +5,7 @@
 // перемкнувся на фірму — і проєкти з задачами вже її.
 
 import { el, emptyState, appendIf, toast } from '../dom.js';
+import { t } from '../../core/i18n.js';
 import { pageHeader, sectionTitle, chip, dueVariant } from '../components.js';
 import { navigate } from '../router.js';
 import { isSignedIn } from '../../core/cloud.js';
@@ -92,7 +93,7 @@ export function firmDetailView(companyId) {
   page.append(el('div.facts',
     chip(`@${company.slug || '—'}`, 'project'),
     company.city ? chip(`📍 ${company.city}`) : null,
-    chip(`ти — ${roleLabel(company.role)}`, company.role === 'owner' ? 'money' : ''),
+    chip(t('ти — {role}', { role: t(roleLabel(company.role)) }), company.role === 'owner' ? 'money' : ''),
     company.listed ? chip('у каталозі') : chip('прихована')));
 
   if (company.about) page.append(el('div.note-card', company.about));
@@ -107,7 +108,7 @@ export function firmDetailView(companyId) {
           setContext({ kind: 'company', id: company.id, name: company.name, role: company.role });
           navigate('/overview');
         },
-      }, `Працювати у «${company.name}»`)));
+      }, t('Працювати у «{company}»', { company: company.name }))));
 
   appendIf(page, catalogBlock(company));
 
@@ -244,21 +245,21 @@ function catalogBlock(company) {
         onclick: async (event) => {
           const button = event.currentTarget;
           button.disabled = true;
-          button.textContent = 'Переношу…';
+          button.textContent = t('Переношу…');
           try {
             const moved = await importCatalog(company.id, getState());
-            toast(`Перенесено позицій: ${moved}`);
+            toast(t('Перенесено позицій: {count}', { count: moved }));
             navigate('/equipment');
           } catch (error) {
             toast(error?.message ?? 'Немає звʼязку з сервером', { error: true });
           } finally {
             button.disabled = false;
-            button.textContent = '↑ Перенести мій каталог у фірму';
+            button.textContent = t('↑ Перенести мій каталог у фірму');
           }
         },
       }, '↑ Перенести мій каталог у фірму'),
       el('p.settings-note',
-        `На цьому телефоні ${plural(mine, 'позиція', 'позиції', 'позицій')} у власних каталогах. `
+        t('На цьому телефоні {items} у власних каталогах. ', { items: plural(mine, 'позиція', 'позиції', 'позицій') })
         + 'Перенесення нічого не стирає: власні каталоги лишаються на місці, '
         + 'а повторний перенос оновлює вже перенесене, а не дублює його.')));
   }
@@ -321,7 +322,7 @@ function roleSheet(existing, company, onDone) {
   const refreshWarning = () => {
     const risky = sensitiveGrants(draft);
     warning.textContent = risky.length
-      ? `⚠ Ця роль відкриє: ${risky.map((item) => item.label.toLowerCase()).join(', ')}.`
+      ? t('⚠ Ця роль відкриє: {list}.', { list: risky.map((item) => t(item.label).toLowerCase()).join(', ') })
       : '';
     warning.className = risky.length ? 'settings-note settings-note--stale' : 'settings-note';
   };
@@ -362,7 +363,7 @@ function roleSheet(existing, company, onDone) {
             type: 'button',
             onclick: () => confirmSheet({
               title: 'Видалити роль?',
-              message: `«${existing.name}» зникне. Люди з цією роллю лишаться у фірмі, `
+              message: t('«{name}» зникне. Люди з цією роллю лишаться у фірмі, ', { name: existing.name })
                 + 'але бачитимуть лише свої задачі та свій гонорар.',
               onConfirm: async () => {
                 try {
@@ -422,7 +423,7 @@ function memberRoleSheet(member, company, onDone) {
     title: member.name || 'Учасник',
     body: formBody(
       field('Рівень', selectInput(
-        ROLES.map((item) => ({ value: item.id, label: `${item.label} — ${item.hint}` })),
+        ROLES.map((item) => ({ value: item.id, label: `${t(item.label)} — ${t(item.hint)}` })),
         { value: level, onchange: (event) => { level = event.target.value; } },
       )),
       rolePicker,
@@ -432,7 +433,7 @@ function memberRoleSheet(member, company, onDone) {
         type: 'button',
         onclick: () => confirmSheet({
           title: 'Прибрати з команди?',
-          message: `${member.name || 'Ця людина'} втратить доступ до проєктів фірми.`,
+          message: t('{name} втратить доступ до проєктів фірми.', { name: member.name || t('Ця людина') }),
           onConfirm: async () => {
             try {
               await removeMember(member.id);

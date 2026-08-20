@@ -1,6 +1,8 @@
 // Каталог команди: кого наймаєш і за скільки.
 
 import { el, emptyState } from '../dom.js';
+import { t } from '../../core/i18n.js';
+import { plural } from '../../core/dates.js';
 import { pageHeader, sectionTitle, chip, fab, statTile } from '../components.js';
 import { editCrew } from '../estimate-forms.js';
 import { getState } from '../../core/store.js';
@@ -97,7 +99,7 @@ async function loadFirmPeople(host, company) {
         el('div.row-meta',
           member.isMe ? chip('це ти', 'money') : null,
           member.userId ? chip('є в застосунку') : chip('без акаунта'),
-          member.rate !== null ? chip(`клієнту ${formatMoney(member.rate, currency)}`) : null)),
+          member.rate !== null ? chip(`${t('клієнту')} ${formatMoney(member.rate, currency)}`) : null)),
       member.fee !== null ? el('span.item-amount', formatMoney(member.fee, currency)) : null,
     ))));
   }
@@ -119,7 +121,7 @@ function myCrewView() {
   const page = el('div.page');
 
   page.append(pageHeader('Команда', {
-    subtitle: `${team.length} людей`,
+    subtitle: plural(team.length, 'людина', 'людини', 'людей'),
     back: '/estimates',
     action: el('button.icon-btn', { type: 'button', 'aria-label': 'Додати людину', onclick: () => editCrew() }, '+'),
   }));
@@ -167,7 +169,7 @@ function myCrewView() {
           member.notes && el('p.row-note', member.notes),
           el('div.row-meta',
             member.phone ? chip(`📞 ${member.phone}`) : null,
-            margin > 0 ? chip(`+${formatMoney(margin, currency)} тобі`, 'money') : null)),
+            margin > 0 ? chip(t('+{sum} тобі', { sum: formatMoney(margin, currency) }), 'money') : null)),
         el('span.item-amount', formatMoney(member.fee ?? 0, currency)),
       );
     })));
