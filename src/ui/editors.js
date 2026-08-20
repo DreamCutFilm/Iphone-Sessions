@@ -12,6 +12,7 @@ import { currencySymbol } from '../core/locale.js';
 import { crewLabel } from '../core/crew.js';
 import { isValidCoordinate, formatCoordinates } from '../core/geo.js';
 import { openMapPicker } from './map-picker.js';
+import { shareIdea, canShareIdeas } from './idea-share.js';
 import { navigate } from './router.js';
 
 // Службове значення для пункту «Свій варіант…» у списку типів зйомки.
@@ -407,6 +408,23 @@ export function editIdea(existing = null, defaults = {}) {
       el('span', 'В обране'),
     ),
   );
+
+  // «У фірму» стоїть тільки в уже збереженої ідеї: ділитися чернеткою,
+  // яку ще не дописали, немає сенсу — команда побачить півдумки.
+  const shareButton = existing && canShareIdeas()
+    ? el('button.btn.btn--ghost.btn--wide', {
+        type: 'button',
+        onclick: () => {
+          // Ділимося тим, що на екрані, тому спершу зберігаємо: інакше
+          // команда побачила б попередній текст, а автор — свій новий.
+          const fresh = { ...idea, ...draft, title: draft.title.trim() || idea.title };
+          patchItem('ideas', idea.id, fresh);
+          shareIdea(fresh);
+        },
+      }, 'Поділитися з фірмою')
+    : null;
+
+  if (shareButton) body.append(shareButton);
 
   openSheet({
     title: existing ? 'Ідея' : 'Нова ідея',

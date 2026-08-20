@@ -175,7 +175,9 @@ export function companyProjects(companyId) {
 
 /** Забути памʼять фірми — після виходу з неї чи зміни ролі. */
 export function forgetCompany(companyId) {
-  for (const key of ['projects', 'tasks']) forget(`${key}.${companyId}`);
+  for (const key of ['projects', 'tasks', 'ideas', 'myideas', 'allestimates']) {
+    forget(`${key}.${companyId}`);
+  }
 }
 
 export function projectPayoutRows(projectId) {

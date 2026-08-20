@@ -312,6 +312,7 @@ body.is-locked { overscroll-behavior: none; }
 .chip--soon { background: rgba(255, 176, 32, 0.12); color: var(--accent); }
 .chip--money { background: rgba(74, 217, 145, 0.14); color: var(--ok); }
 .chip--project { background: var(--accent-dim); color: var(--accent); }
+.chip--ok { background: rgba(74, 217, 145, 0.14); color: var(--ok); }
 
 .chip--status-lead { background: #2a2f3a; color: #9fb4d8; }
 .chip--status-prep { background: #33291a; color: var(--accent); }
