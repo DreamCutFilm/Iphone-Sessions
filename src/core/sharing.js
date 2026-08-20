@@ -9,7 +9,7 @@
 // застосунок, будь-яка помилка в ньому відкривала б чужі гроші; тепер
 // найгірше, що може статися від помилки тут, — щось не покажеться.
 
-import { rpc } from './cloud.js';
+import { rpc, query } from './cloud.js';
 import { withMemory, forget } from './cache.js';
 import { projectById, projectFinance, projectPayouts, tasksOfProject, billingEstimates } from './selectors.js';
 import { itemCost, describeItemCount } from './estimates.js';
@@ -220,6 +220,71 @@ export function sharedItems(projectId) {
       notes: row.notes ?? '',
     }));
   });
+}
+
+/**
+ * Кошториси проєкту. Приходять лише тому, кому видно суми клієнта, —
+ * решті сервер не віддає жодного рядка, і це не помилка, а правило.
+ */
+export function firmEstimates(projectId) {
+  return withMemory(`estimates.${projectId}`, async () => {
+    const rows = await query('company_estimates', {
+      select: 'id,project_id,title,status,currency,discount_percent,tax_percent,'
+        + 'client_notes,notes,updated_at,'
+        + 'company_estimate_items(id,title,category,equipment_id,crew_id,internal_only,'
+        + 'unit,quantity,shifts,unit_price,unit_cost,notes,position)',
+      filter: `project_id=eq.${projectId}`,
+      order: 'created_at.asc',
+    });
+
+    return (rows ?? []).map(estimateFromRow);
+  });
+}
+
+/** Усі кошториси фірми — для екрана грошей. */
+export function allFirmEstimates(companyId) {
+  return withMemory(`allestimates.${companyId}`, async () => {
+    const rows = await query('company_estimates', {
+      select: 'id,project_id,title,status,currency,updated_at,'
+        + 'company_estimate_items(id,category,internal_only,quantity,shifts,unit_price,unit_cost)',
+      filter: `company_id=eq.${companyId}`,
+      order: 'updated_at.desc',
+    });
+
+    return (rows ?? []).map(estimateFromRow);
+  });
+}
+
+function estimateFromRow(row) {
+  return {
+    id: row.id,
+    projectId: row.project_id ?? null,
+    title: row.title,
+    status: row.status,
+    currency: row.currency,
+    discountPercent: Number(row.discount_percent) || 0,
+    taxPercent: Number(row.tax_percent) || 0,
+    clientNotes: row.client_notes ?? '',
+    notes: row.notes ?? '',
+    updatedAt: row.updated_at,
+    items: (row.company_estimate_items ?? [])
+      .map((item) => ({
+        id: item.id,
+        title: item.title,
+        category: item.category,
+        equipmentId: item.equipment_id ?? null,
+        crewId: item.crew_id ?? null,
+        internalOnly: Boolean(item.internal_only),
+        unit: item.unit,
+        quantity: Number(item.quantity) || 0,
+        shifts: Number(item.shifts) || 0,
+        unitPrice: Number(item.unit_price) || 0,
+        unitCost: Number(item.unit_cost) || 0,
+        notes: item.notes ?? '',
+        position: Number(item.position) || 0,
+      }))
+      .sort((a, b) => a.position - b.position),
+  };
 }
 
 /** Мої задачі по всій фірмі — для звичайного екрана задач. */

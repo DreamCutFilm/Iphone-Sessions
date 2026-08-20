@@ -5,16 +5,23 @@
 // рівно свої: цифри, яких людині не належить знати, до неї не доїжджають
 // із сервера взагалі.
 
-import { el, emptyState } from '../dom.js';
+import { el, emptyState, toast, appendIf } from '../dom.js';
 import { pageHeader, sectionTitle, chip, dueVariant } from '../components.js';
 import { navigate } from '../router.js';
 import { isSignedIn } from '../../core/cloud.js';
 import { currentCompany } from '../../core/context.js';
 import { freshnessNote } from '../context-bar.js';
+import { permissionsOf } from '../../core/roles.js';
+import { firmEstimates } from '../../core/sharing.js';
+import { toggleFirmTask } from '../../core/firm-projects.js';
+import {
+  editFirmProject, editFirmTask, editFirmEstimate, firmItemPicker, editFirmItem,
+} from '../firm-project-forms.js';
 import {
   companyProjects, sharedTasks, sharedItems, projectPayoutRows, sharedProfit,
 } from '../../core/sharing.js';
 import { statusLabel } from '../../core/models.js';
+import { estimateStatusLabel, unitLabel } from '../../core/estimates.js';
 import { categoryLabel } from '../../core/equipment.js';
 import { formatMoney } from '../../core/locale.js';
 import { formatDate, describeDue, weekdayShort, daysUntil, plural } from '../../core/dates.js';
@@ -69,8 +76,21 @@ async function load(host, projectId) {
   const stale = freshnessNote(result, () => load(host, projectId));
   if (stale) parts.push(stale);
 
+  const mayEdit = permissionsOf(company).can_edit;
+
   parts.push(el('h2.page-title', project.title));
   if (project.client) parts.push(el('p.page-subtitle', project.client));
+
+  if (mayEdit) {
+    parts.push(el('div.form', el('button.btn.btn--ghost.btn--wide', {
+      type: 'button',
+      onclick: () => editFirmProject(
+        { ...project, notes: project.notes ?? '' },
+        company,
+        () => load(host, projectId),
+      ),
+    }, '✎ Правити проєкт')));
+  }
 
   const facts = [chip(statusLabel(project.status), `status-${project.status}`)];
   if (project.style) facts.push(chip(`🎬 ${project.style}`, 'project'));
@@ -112,15 +132,19 @@ async function load(host, projectId) {
 
   const tasksHost = el('div');
   const itemsHost = el('div');
+  const estimatesHost = el('div');
   const moneyHost = el('div');
-  host.append(tasksHost, itemsHost, moneyHost);
+  host.append(tasksHost, itemsHost, estimatesHost, moneyHost);
 
-  loadTasks(tasksHost, project);
+  const reload = () => load(host, projectId);
+
+  loadTasks(tasksHost, project, company, mayEdit, reload);
   loadItems(itemsHost, project);
-  loadMoney(moneyHost, project);
+  loadEstimates(estimatesHost, project, company, mayEdit, reload);
+  loadMoney(moneyHost, project, company, mayEdit, reload);
 }
 
-async function loadTasks(host, project) {
+async function loadTasks(host, project, company, mayEdit, reload) {
   host.replaceChildren(sectionTitle('Що зробити'), el('p.settings-note', 'Завантажую…'));
 
   let tasks;
@@ -132,8 +156,16 @@ async function loadTasks(host, project) {
   }
 
   if (!tasks.length) {
-    host.replaceChildren(sectionTitle('Що зробити'),
-      el('p.settings-note', 'Задач по цьому проєкту поки немає.'));
+    host.replaceChildren(
+      sectionTitle('Що зробити'),
+      el('p.settings-note', 'Задач по цьому проєкту поки немає.'),
+      mayEdit
+        ? el('div.form', el('button.btn.btn--ghost.btn--wide', {
+            type: 'button',
+            onclick: () => editFirmTask(null, company, project.id, reload),
+          }, '+ Додати задачу'))
+        : null,
+    );
     return;
   }
 
@@ -143,18 +175,27 @@ async function loadTasks(host, project) {
   // Свої задачі — вгору. Людина шукає в цьому списку саме їх.
   open.sort((a, b) => Number(b.isMine) - Number(a.isMine));
 
-  const parts = [sectionTitle('Що зробити', el('span.section-hint', `${open.length} з ${tasks.length}`))];
-  parts.push(el('div.list', open.map(taskRow)));
+  const parts = [sectionTitle(
+    'Що зробити',
+    mayEdit
+      ? el('button.link', {
+          type: 'button',
+          onclick: () => editFirmTask(null, company, project.id, reload),
+        }, '+ додати')
+      : el('span.section-hint', `${open.length} з ${tasks.length}`),
+  )];
+  parts.push(el('div.list', open.map((task) => taskRow(task, { company, project, mayEdit, reload }))));
 
   if (done.length) {
     parts.push(sectionTitle('Виконано', el('span.section-hint', String(done.length))));
-    parts.push(el('div.list.list--muted', done.slice(0, 10).map(taskRow)));
+    parts.push(el('div.list.list--muted',
+      done.slice(0, 10).map((task) => taskRow(task, { company, project, mayEdit, reload }))));
   }
 
   host.replaceChildren(...parts);
 }
 
-function taskRow(task) {
+function taskRow(task, { company, project, mayEdit, reload } = {}) {
   const meta = [];
   if (task.isMine) meta.push(chip('це тобі', 'money'));
   else if (task.assignee) meta.push(chip(`👤 ${task.assignee}`));
@@ -164,8 +205,31 @@ function taskRow(task) {
 
   return el(
     'article.row',
-    { class: task.done ? 'is-done' : '' },
-    el('span.row-mark', task.isMine ? '🙋' : '○'),
+    {
+      class: task.done ? 'is-done' : '',
+      onclick: mayEdit
+        ? () => editFirmTask(
+            { ...task, assigneeId: null, assigneeName: task.assignee },
+            company, project.id, reload,
+          )
+        : null,
+    },
+    el('button.task-check', {
+      type: 'button',
+      class: task.done ? 'is-done' : '',
+      'aria-label': task.done ? 'Повернути в роботу' : 'Позначити виконаною',
+      onclick: mayEdit
+        ? async (event) => {
+            event.stopPropagation();
+            try {
+              await toggleFirmTask(company.id, project.id, task.id, !task.done);
+              reload();
+            } catch (error) {
+              toast(error?.message ?? 'Не вдалося', { error: true });
+            }
+          }
+        : null,
+    }, task.done ? '✓' : ''),
     el('div.row-body',
       el('p.row-title', task.title),
       task.notes && el('p.row-note', task.notes),
@@ -217,6 +281,109 @@ async function loadItems(host, project) {
   ))));
 
   host.replaceChildren(...parts);
+}
+
+/**
+ * Кошториси проєкту.
+ *
+ * Приходять лише тому, кому видно суми клієнта. Для решти команди тут
+ * порожньо — і це не помилка завантаження, а правило: кошторис і є ті самі
+ * гроші клієнта, тільки розписані по рядках.
+ */
+async function loadEstimates(host, project, company, mayEdit, reload) {
+  const perms = permissionsOf(company);
+  if (!perms.can_see_client_money) return;
+
+  host.replaceChildren(sectionTitle('Кошториси'), el('p.settings-note', 'Завантажую…'));
+
+  let result;
+  try {
+    result = await firmEstimates(project.id);
+  } catch (error) {
+    host.replaceChildren(sectionTitle('Кошториси'),
+      el('p.settings-note', error?.message ?? 'Не вдалося завантажити.'));
+    return;
+  }
+
+  const estimates = result.value;
+  const parts = [sectionTitle(
+    'Кошториси',
+    mayEdit
+      ? el('button.link', {
+          type: 'button',
+          onclick: () => editFirmEstimate(null, company, project.id, reload),
+        }, '+ додати')
+      : el('span.section-hint', String(estimates.length)),
+  )];
+
+  if (!estimates.length) {
+    parts.push(el('p.settings-note', mayEdit
+      ? 'Кошторису ще немає. Склади — позиції беруться з каталогу фірми, '
+        + 'а гроші проєкту порахуються самі.'
+      : 'Кошторисів ще немає.'));
+    host.replaceChildren(...parts);
+    return;
+  }
+
+  for (const estimate of estimates) {
+    const totals = firmTotals(estimate);
+
+    parts.push(el('article.card',
+      el('div.card-body',
+        el('p.card-title', estimate.title),
+        el('div.row-meta',
+          chip(estimateStatusLabel(estimate.status),
+            estimate.status === 'approved' ? 'money' : ''),
+          chip(plural(estimate.items.length, 'позиція', 'позиції', 'позицій')),
+          chip(formatMoney(totals.forClient, estimate.currency), 'money')),
+        estimate.items.length
+          ? el('div.list', estimate.items.map((item) => el(
+              'article.row',
+              mayEdit ? { onclick: () => editFirmItem(item, estimate, company, reload) } : null,
+              el('div.row-body',
+                el('p.row-title', item.title),
+                el('div.row-meta',
+                  chip(`${item.quantity > 1 ? `${item.quantity} × ` : ''}`
+                    + `${item.shifts} ${unitLabel(item.unit, item.shifts)}`),
+                  item.internalOnly ? chip('не в рахунку', 'warn') : null,
+                  chip(`нам ${formatMoney(item.quantity * item.shifts * item.unitCost, estimate.currency)}`))),
+              el('span.item-amount',
+                formatMoney(item.internalOnly ? 0 : item.quantity * item.shifts * item.unitPrice, estimate.currency)),
+            )))
+          : el('p.settings-note', 'Позицій ще немає.'),
+        mayEdit
+          ? el('div.form',
+              el('button.btn.btn--ghost.btn--wide', {
+                type: 'button',
+                onclick: () => firmItemPicker(estimate, company, reload),
+              }, '+ Позиція з каталогу фірми'),
+              el('button.link', {
+                type: 'button',
+                onclick: () => editFirmEstimate(estimate, company, project.id, reload),
+              }, 'Налаштування кошторису'))
+          : null),
+    ));
+  }
+
+  host.replaceChildren(...parts);
+}
+
+/** Підсумок кошторису фірми: те саме, що рахує база, але для екрана. */
+function firmTotals(estimate) {
+  let forClient = 0;
+  let cost = 0;
+
+  for (const item of estimate.items) {
+    const amount = item.quantity * item.shifts * item.unitPrice;
+    if (!item.internalOnly) forClient += amount;
+    cost += item.quantity * item.shifts * item.unitCost;
+  }
+
+  const afterDiscount = forClient * (1 - (estimate.discountPercent || 0) / 100);
+  return {
+    forClient: Math.round(afterDiscount * 100) / 100,
+    cost: Math.round(cost * 100) / 100,
+  };
 }
 
 async function loadMoney(host, project) {

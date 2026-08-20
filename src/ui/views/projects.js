@@ -19,6 +19,8 @@ import { isSignedIn } from '../../core/cloud.js';
 import { canManage } from '../../core/account.js';
 import { currentCompany, inCompany } from '../../core/context.js';
 import { contextBar, freshnessNote } from '../context-bar.js';
+import { permissionsOf } from '../../core/roles.js';
+import { editFirmProject } from '../firm-project-forms.js';
 import {
   buildProjectPayload, unlinkedPayouts, publishProject, unpublishProject, companyProjects,
 } from '../../core/sharing.js';
@@ -38,7 +40,18 @@ function firmProjectsView() {
   const company = currentCompany();
   const page = el('div.page');
 
-  page.append(pageHeader('Проєкти', { subtitle: company.name }));
+  const mayEdit = permissionsOf(company).can_edit;
+
+  page.append(pageHeader('Проєкти', {
+    subtitle: company.name,
+    action: mayEdit
+      ? el('button.icon-btn', {
+          type: 'button',
+          'aria-label': 'Новий проєкт фірми',
+          onclick: () => editFirmProject(null, company, () => navigate('/projects')),
+        }, '+')
+      : null,
+  }));
   appendIf(page, contextBar());
 
   const host = el('div');
@@ -73,9 +86,15 @@ async function loadFirmProjects(host, company) {
   if (!projects.length) {
     parts.push(emptyState(
       `У «${company.name}» поки порожньо`,
-      canManage(company.role)
-        ? 'Перемкнись на «Моє», відкрий свій проєкт і натисни «Опублікувати у фірмі».'
-        : 'Проєкти зʼявляться, коли керівник їх опублікує.',
+      mayEditHere(company)
+        ? 'Створи перший — кнопкою «+» угорі. Або перемкнись на «Моє» й перенеси туди свій.'
+        : 'Проєкти зʼявляться, коли керівник їх заведе.',
+      mayEditHere(company)
+        ? el('button.btn.btn--primary', {
+            type: 'button',
+            onclick: () => editFirmProject(null, company, () => navigate('/projects')),
+          }, 'Створити проєкт')
+        : null,
     ));
   } else {
     // Групуємо так само, як власні: за стадією виробництва. Людина не має
@@ -418,4 +437,9 @@ function deadlineLabel(deadline) {
   const human = describeDue(deadline);
   const date = formatDate(deadline);
   return human === date ? `⚑ Здача ${date}` : `⚑ Здача ${date} · ${human}`;
+}
+
+/** Чи можу я тут щось міняти. Винесено, бо питається з двох місць. */
+function mayEditHere(company) {
+  return permissionsOf(company).can_edit;
 }
