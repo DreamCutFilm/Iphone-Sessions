@@ -290,8 +290,10 @@ async function loadTeam(host, company, rootHost) {
   parts.push(el('div.list', team.map((member) => el(
     'article.row',
     {
-      onclick: company.role === 'owner' && !member.isMe
-        ? () => memberSheet(member, company, host, rootHost)
+      // Ролями керує сторінка фірми: там видно і рівні, і власні ролі
+      // фірми поруч. Дві різні панелі для одного й того самого розходяться.
+      onclick: canManage(company.role) && !member.isMe
+        ? () => navigate(`/firm/${company.id}`)
         : null,
     },
     el('span.row-mark', member.isMe ? '🙋' : '👤'),
@@ -374,45 +376,6 @@ async function loadTeam(host, company, rootHost) {
   }
 
   host.replaceChildren(...parts);
-}
-
-function memberSheet(member, company, teamHost, rootHost) {
-  let role = member.role;
-
-  openSheet({
-    title: member.name || 'Учасник',
-    body: formBody(
-      field('Роль', selectInput(
-        ROLES.map((item) => ({ value: item.id, label: `${item.label} — ${item.hint}` })),
-        { value: role, onchange: (event) => { role = event.target.value; } },
-      )),
-    ),
-    actions: [
-      el('button.btn.btn--danger', {
-        type: 'button',
-        onclick: () => confirmSheet({
-          title: 'Прибрати з команди?',
-          message: `${member.name || 'Ця людина'} втратить доступ до проєктів фірми.`,
-          onConfirm: async () => {
-            await run(() => removeMember(member.id));
-            toast('Прибрано з команди');
-            loadTeam(teamHost, company, rootHost);
-          },
-        }),
-      }, 'Прибрати'),
-      el('button.btn.btn--primary', {
-        type: 'button',
-        onclick: async () => {
-          if (role !== member.role) {
-            await run(() => changeRole(member.id, role));
-            toast(`Роль змінено: ${roleLabel(role)}`);
-          }
-          closeSheet();
-          loadTeam(teamHost, company, rootHost);
-        },
-      }, 'Зберегти'),
-    ],
-  });
 }
 
 function createCompanySheet(host) {

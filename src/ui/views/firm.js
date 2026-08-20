@@ -4,16 +4,21 @@
 // в команді, хто головний і хто я тут. Робота живе на звичайних вкладках:
 // перемкнувся на фірму — і проєкти з задачами вже її.
 
-import { el, emptyState, appendIf } from '../dom.js';
+import { el, emptyState, appendIf, toast } from '../dom.js';
 import { pageHeader, sectionTitle, chip, dueVariant } from '../components.js';
 import { navigate } from '../router.js';
 import { isSignedIn } from '../../core/cloud.js';
 import { knownCompanies, getContext, setContext } from '../../core/context.js';
-import { teamOf, roleLabel, canManage } from '../../core/account.js';
+import { teamOf, roleLabel, canManage, changeRole, removeMember, ROLES } from '../../core/account.js';
 import { companyProjects } from '../../core/sharing.js';
 import { statusLabel } from '../../core/models.js';
 import { describeDue } from '../../core/dates.js';
 import { freshnessNote } from '../context-bar.js';
+import { openSheet, closeSheet, confirmSheet, field, formBody, textInput, selectInput } from '../sheet.js';
+import {
+  PERMISSIONS, emptyRole, describeRole, sensitiveGrants,
+  rolesOf, createRole, updateRole, removeRole, assignRole, permissionsOf,
+} from '../../core/roles.js';
 
 export function firmView() {
   const page = el('div.page');
@@ -103,10 +108,12 @@ export function firmDetailView(companyId) {
       }, `Працювати у «${company.name}»`)));
 
   const teamHost = el('div');
+  const rolesHost = el('div');
   const projectsHost = el('div');
-  page.append(teamHost, projectsHost);
+  page.append(teamHost, rolesHost, projectsHost);
 
   loadTeam(teamHost, company);
+  if (permissionsOf(company).can_manage_team) loadRoles(rolesHost, company);
   loadProjects(projectsHost, company);
 
   return page;
@@ -137,13 +144,17 @@ async function loadTeam(host, company) {
 
   parts.push(el('div.list', sorted.map((member) => el(
     'article.row',
+    canManage(company.role) && !member.isMe
+      ? { onclick: () => memberRoleSheet(member, company, () => loadTeam(host, company)) }
+      : null,
     el('span.row-mark', member.isMe ? '🙋' : (member.role === 'owner' ? '★' : '👤')),
     el('div.row-body',
       el('p.row-title', member.name || member.title || 'Без імені'),
       el('div.row-meta',
         chip(roleLabel(member.role), member.role === 'owner' ? 'money' : ''),
-        member.title ? chip(member.title) : null,
+        member.roleName ? chip(member.roleName, 'project') : null,
         member.isMe ? chip('це ти') : null)),
+    canManage(company.role) && !member.isMe ? el('span.card-chevron', '›') : null,
   ))));
 
   if (canManage(company.role)) {
@@ -193,4 +204,201 @@ async function loadProjects(host, company) {
 
   host.replaceChildren(...parts);
   appendIf(host, freshnessNote(result, () => loadProjects(host, company)));
+}
+
+
+// --- Ролі -------------------------------------------------------------------
+
+async function loadRoles(host, company) {
+  host.replaceChildren(sectionTitle('Ролі'), el('p.settings-note', 'Завантажую…'));
+
+  let roles;
+  try {
+    roles = await rolesOf(company.id);
+  } catch (error) {
+    host.replaceChildren(
+      sectionTitle('Ролі'),
+      el('p.settings-note', error?.message ?? 'Немає звʼязку з сервером'),
+    );
+    return;
+  }
+
+  const parts = [sectionTitle('Ролі', el('span.section-hint', String(roles.length)))];
+
+  parts.push(el('p.settings-note',
+    'Роль — це посада й те, що вона відкриває. Директор бачить усе завжди, '
+    + 'адміністратор — усе, крім керування командою. Решті видно рівно те, '
+    + 'що написано в їхній ролі; свої задачі й свій гонорар — завжди.'));
+
+  parts.push(el('div.list', roles.map((role) => el(
+    'article.row',
+    { onclick: () => roleSheet(role, company, () => loadRoles(host, company)) },
+    el('span.row-mark', '🎭'),
+    el('div.row-body',
+      el('p.row-title', role.name),
+      el('p.row-note', describeRole(role))),
+    el('span.card-chevron', '›'),
+  ))));
+
+  parts.push(el('div.form', el('button.btn.btn--ghost.btn--wide', {
+    type: 'button',
+    onclick: () => roleSheet(null, company, () => loadRoles(host, company)),
+  }, '+ Нова роль')));
+
+  host.replaceChildren(...parts);
+}
+
+/**
+ * Створення й правка ролі.
+ *
+ * Дозволи, які відкривають гроші, підписані окремо й помітно: різниця між
+ * «бачить оренду» і «бачить, скільки платить клієнт» коштує дорого, і
+ * помилитися тут має бути важко.
+ */
+function roleSheet(existing, company, onDone) {
+  const draft = existing ? { ...existing } : emptyRole();
+  const warning = el('p.settings-note');
+
+  const refreshWarning = () => {
+    const risky = sensitiveGrants(draft);
+    warning.textContent = risky.length
+      ? `⚠ Ця роль відкриє: ${risky.map((item) => item.label.toLowerCase()).join(', ')}.`
+      : '';
+    warning.className = risky.length ? 'settings-note settings-note--stale' : 'settings-note';
+  };
+
+  const switches = PERMISSIONS.map((permission) => {
+    const box = el('input', {
+      type: 'checkbox',
+      checked: Boolean(draft[permission.id]),
+      onchange: (event) => {
+        draft[permission.id] = event.target.checked;
+        refreshWarning();
+      },
+    });
+
+    return el('label.perm',
+      box,
+      el('span.perm-body',
+        el('span.perm-label', permission.label),
+        el('span.perm-hint', permission.hint)));
+  });
+
+  refreshWarning();
+
+  openSheet({
+    title: existing ? 'Роль' : 'Нова роль',
+    body: formBody(
+      field('Назва', textInput({
+        value: draft.name,
+        placeholder: 'Монтажер',
+        oninput: (event) => { draft.name = event.target.value; },
+      }), 'Так вона підписуватиметься в складі команди.'),
+      el('div.perms', switches),
+      warning,
+    ),
+    actions: [
+      existing
+        ? el('button.btn.btn--ghost', {
+            type: 'button',
+            onclick: () => confirmSheet({
+              title: 'Видалити роль?',
+              message: `«${existing.name}» зникне. Люди з цією роллю лишаться у фірмі, `
+                + 'але бачитимуть лише свої задачі та свій гонорар.',
+              onConfirm: async () => {
+                try {
+                  await removeRole(existing.id);
+                  toast('Роль видалено');
+                  onDone();
+                } catch (error) {
+                  toast(error?.message ?? 'Не вдалося видалити', { error: true });
+                }
+              },
+            }),
+          }, 'Видалити')
+        : el('button.btn.btn--ghost', { type: 'button', onclick: () => closeSheet() }, 'Скасувати'),
+      el('button.btn.btn--primary', {
+        type: 'button',
+        onclick: async (event) => {
+          if (!draft.name.trim()) { toast('Впиши назву ролі', { error: true }); return; }
+
+          const button = event.currentTarget;
+          button.disabled = true;
+          try {
+            if (existing) await updateRole(existing.id, draft);
+            else await createRole(company.id, draft);
+            closeSheet();
+            toast('Збережено');
+            onDone();
+          } catch (error) {
+            toast(error?.message ?? 'Не вдалося зберегти', { error: true });
+          } finally {
+            button.disabled = false;
+          }
+        },
+      }, 'Зберегти'),
+    ],
+  });
+}
+
+/** Рівень і роль однієї людини. */
+function memberRoleSheet(member, company, onDone) {
+  let level = member.role;
+  let roleId = member.roleId ?? '';
+  const rolePicker = el('div.form');
+
+  rolesOf(company.id)
+    .then((roles) => {
+      rolePicker.replaceChildren(field('Роль у фірмі', selectInput(
+        [{ value: '', label: 'Без ролі — лише свої задачі й гонорар' },
+          ...roles.map((role) => ({ value: role.id, label: `${role.name} — ${describeRole(role)}` }))],
+        { value: roleId, onchange: (event) => { roleId = event.target.value; } },
+      ), 'Рівень вирішує, чи людина керує фірмою. Роль — що саме їй видно.'));
+    })
+    .catch(() => {
+      rolePicker.replaceChildren(el('p.settings-note', 'Не вдалося прочитати ролі фірми.'));
+    });
+
+  openSheet({
+    title: member.name || 'Учасник',
+    body: formBody(
+      field('Рівень', selectInput(
+        ROLES.map((item) => ({ value: item.id, label: `${item.label} — ${item.hint}` })),
+        { value: level, onchange: (event) => { level = event.target.value; } },
+      )),
+      rolePicker,
+    ),
+    actions: [
+      el('button.btn.btn--danger', {
+        type: 'button',
+        onclick: () => confirmSheet({
+          title: 'Прибрати з команди?',
+          message: `${member.name || 'Ця людина'} втратить доступ до проєктів фірми.`,
+          onConfirm: async () => {
+            try {
+              await removeMember(member.id);
+              toast('Прибрано з команди');
+              onDone();
+            } catch (error) {
+              toast(error?.message ?? 'Не вдалося', { error: true });
+            }
+          },
+        }),
+      }, 'Прибрати'),
+      el('button.btn.btn--primary', {
+        type: 'button',
+        onclick: async () => {
+          try {
+            if (level !== member.role) await changeRole(member.id, level);
+            if ((roleId || null) !== (member.roleId ?? null)) await assignRole(member.id, roleId);
+            closeSheet();
+            toast('Збережено');
+            onDone();
+          } catch (error) {
+            toast(error?.message ?? 'Не вдалося зберегти', { error: true });
+          }
+        },
+      }, 'Зберегти'),
+    ],
+  });
 }

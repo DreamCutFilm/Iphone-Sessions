@@ -55,13 +55,25 @@ export function isValidSlug(slug) {
 /** Фірми, у яких я є, разом із моєю роллю. */
 export async function myCompanies() {
   const rows = await query('memberships', {
-    select: 'role,title,created_at,companies(id,name,slug,city,about,listed)',
+    select: 'role,title,created_at,role_id,'
+      + 'company_roles(name,can_see_client_money,can_see_all_payouts,can_see_client_contacts,'
+      + 'can_see_rental,can_edit,can_manage_team),'
+      + 'companies(id,name,slug,city,about,listed)',
     filter: `user_id=eq.${currentUser()?.id}`,
   });
 
   const companies = (rows ?? [])
     .filter((row) => row.companies)
-    .map((row) => ({ ...row.companies, role: row.role, title: row.title }));
+    .map((row) => ({
+      ...row.companies,
+      role: row.role,
+      title: row.title,
+      roleId: row.role_id ?? null,
+      roleName: row.company_roles?.name ?? '',
+      // Дозволи власної ролі — щоб застосунок не малював кнопок,
+      // які сервер однаково відхилить.
+      roleGrants: row.company_roles ?? null,
+    }));
 
   // Список одразу лягає на пристрій: перемикач фірм має малюватися ще до
   // того, як мережа відповість, а після виходу з фірми — сам себе виправити.
@@ -92,7 +104,8 @@ export async function searchCompanies(text) {
 
 export async function teamOf(companyId) {
   const rows = await query('memberships', {
-    select: 'id,user_id,role,title,created_at,profiles(full_name,phone,email)',
+    select: 'id,user_id,role,title,role_id,created_at,'
+      + 'company_roles(name),profiles(full_name,phone,email)',
     filter: `company_id=eq.${companyId}`,
     order: 'created_at.asc',
   });
@@ -102,6 +115,8 @@ export async function teamOf(companyId) {
     userId: row.user_id,
     role: row.role,
     title: row.title ?? '',
+    roleId: row.role_id ?? null,
+    roleName: row.company_roles?.name ?? '',
     name: row.profiles?.full_name || '',
     phone: row.profiles?.phone || '',
     email: row.profiles?.email || '',

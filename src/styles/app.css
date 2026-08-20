@@ -193,6 +193,22 @@ body.is-locked { overscroll-behavior: none; }
    а чесне попередження, що показане завантажилось раніше. */
 .settings-note--stale { color: var(--warn); }
 
+/* Дозволи ролі. Галочка велика й ліворуч, підпис поруч: список читають
+   згори вниз і швидко, а не вдивляються в кожен рядок. */
+.perms { display: flex; flex-direction: column; gap: 2px; }
+
+.perm {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 2px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+.perm:last-child { border-bottom: 0; }
+.perm input { width: 22px; height: 22px; margin: 2px 0 0; accent-color: var(--accent); flex: 0 0 22px; }
+.perm-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.perm-label { font-size: 15px; font-weight: 500; }
+.perm-hint { font-size: 13px; color: var(--muted); }
+
 /* Список своїх під полем пошти. Обмежуємо висоту: у великій фірмі він
    інакше виштовхнув би кнопку «Зберегти» кудись за край екрана. */
 .team-pick { margin-top: -4px; }

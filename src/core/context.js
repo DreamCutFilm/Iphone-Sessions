@@ -33,6 +33,9 @@ export function rememberCompanies(companies) {
     city: company.city ?? '',
     about: company.about ?? '',
     listed: Boolean(company.listed),
+    roleId: company.roleId ?? null,
+    roleName: company.roleName ?? '',
+    roleGrants: company.roleGrants ?? null,
   }));
 
   writeJson(COMPANIES_KEY, list);

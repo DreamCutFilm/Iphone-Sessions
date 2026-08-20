@@ -260,6 +260,107 @@ as $$
 $$;
 
 -- ---------------------------------------------------------------------------
+-- 6а. Ролі фірми й дозволи
+-- ---------------------------------------------------------------------------
+-- Досі ролей було три на всіх: директор, адміністратор, команда. Для фірми,
+-- де монтажер, оператор і помічник роблять різне, цього мало.
+--
+-- Тепер директор заводить свої ролі — «Монтажер», «Оператор», «Помічник» —
+-- і кожній ставить, що вона бачить. Дозволів навмисно шість, а не «на кожне
+-- поле»: сорок галочок неможливо втримати в голові, і одного дня хтось
+-- випадково відкрив би гонорари всій команді. Шість можна перечитати очима
+-- за десять секунд, і небезпечну комбінацію з них не зібрати.
+--
+-- Три рівні лишаються, але тепер вони означають інше:
+--   owner  — директор: може все, і забрати це в нього не можна;
+--   admin  — адміністратор: може все, крім керування командою й ролями;
+--   member — команда: може рівно те, що написано в його ролі.
+
+create table if not exists public.company_roles (
+  id          uuid primary key default gen_random_uuid(),
+  company_id  uuid not null references public.companies on delete cascade,
+  name        text not null check (length(trim(name)) > 0),
+
+  -- Суми, які платить клієнт, і заробіток фірми.
+  can_see_client_money    boolean not null default false,
+  -- Гонорари всієї команди. Свій власний видно завжди й без дозволу.
+  can_see_all_payouts     boolean not null default false,
+  -- Хто замовник і як із ним звʼязатися.
+  can_see_client_contacts boolean not null default false,
+  -- Оренда техніки й у скільки вона обходиться фірмі. Увімкнено за
+  -- замовчуванням: без цього людина не знає, що везти на майданчик.
+  can_see_rental          boolean not null default true,
+  -- Створювати й змінювати проєкти, кошториси, публікувати їх.
+  can_edit                boolean not null default false,
+  -- Запрошувати людей, міняти ролі, приймати заявки.
+  can_manage_team         boolean not null default false,
+
+  position    integer not null default 0,
+  created_at  timestamptz not null default now(),
+  unique (company_id, name)
+);
+
+create index if not exists company_roles_company_idx on public.company_roles (company_id);
+
+-- Яку роль має людина. Порожньо — діють лише права свого рівня.
+alter table public.memberships add column if not exists role_id uuid;
+
+alter table public.memberships drop constraint if exists memberships_role_id_fkey;
+alter table public.memberships
+  add constraint memberships_role_id_fkey
+  foreign key (role_id) references public.company_roles (id) on delete set null;
+
+-- ---------------------------------------------------------------------------
+-- 6б. Одне питання замість шести
+-- ---------------------------------------------------------------------------
+-- Уся схема тепер питає дозвіл в одному місці. Це навмисно: доки правило
+-- живе в одній функції, його можна прочитати цілком і переконатися, що воно
+-- те, що треба. Розсипане по двадцятьох правилах доступу, воно рано чи пізно
+-- десь розійдеться саме з собою — і розійдеться тихо.
+
+create or replace function public.can(cid uuid, what text)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select coalesce((
+    select case
+      -- Директора обмежити не можна: фірма інакше замкнула б сама себе.
+      when m.role = 'owner' then true
+      when m.role = 'admin' then what <> 'team'
+      else case what
+        when 'money'    then coalesce(r.can_see_client_money, false)
+        when 'payouts'  then coalesce(r.can_see_all_payouts, false)
+        when 'contacts' then coalesce(r.can_see_client_contacts, false)
+        when 'rental'   then coalesce(r.can_see_rental, true)
+        when 'edit'     then coalesce(r.can_edit, false)
+        when 'team'     then coalesce(r.can_manage_team, false)
+        else false
+      end
+    end
+    from public.memberships m
+    left join public.company_roles r on r.id = m.role_id
+    where m.company_id = cid and m.user_id = auth.uid()
+    limit 1
+  ), false);
+$$;
+
+alter table public.company_roles enable row level security;
+
+-- Ролі видно всій команді: людина має право знати, що саме їй дозволено.
+drop policy if exists company_roles_select on public.company_roles;
+create policy company_roles_select on public.company_roles for select
+  using (public.is_member(company_id));
+
+drop policy if exists company_roles_write on public.company_roles;
+create policy company_roles_write on public.company_roles for all
+  using (public.can(company_id, 'team')) with check (public.can(company_id, 'team'));
+
+grant execute on function public.can(uuid, text) to authenticated;
+
+-- ---------------------------------------------------------------------------
 -- 7. Права доступу
 -- ---------------------------------------------------------------------------
 
@@ -291,7 +392,7 @@ create policy companies_insert on public.companies for insert
 
 drop policy if exists companies_update on public.companies;
 create policy companies_update on public.companies for update
-  using (public.is_manager(id)) with check (public.is_manager(id));
+  using (public.can(id, 'team')) with check (public.can(id, 'team'));
 
 drop policy if exists companies_delete on public.companies;
 create policy companies_delete on public.companies for delete
@@ -307,7 +408,7 @@ create policy memberships_select on public.memberships for select
 drop policy if exists memberships_insert on public.memberships;
 create policy memberships_insert on public.memberships for insert
   with check (
-    public.is_manager(company_id)
+    public.can(company_id, 'team')
     or (
       user_id = auth.uid()
       and not exists (select 1 from public.memberships m where m.company_id = memberships.company_id)
@@ -322,12 +423,12 @@ create policy memberships_update on public.memberships for update
 -- Піти з фірми можна самому; вигнати — тільки директор.
 drop policy if exists memberships_delete on public.memberships;
 create policy memberships_delete on public.memberships for delete
-  using (user_id = auth.uid() or public.member_role(company_id) = 'owner');
+  using (user_id = auth.uid() or public.can(company_id, 'team'));
 
 -- Заявки: свою бачить автор, усі — керівники фірми.
 drop policy if exists join_requests_select on public.join_requests;
 create policy join_requests_select on public.join_requests for select
-  using (user_id = auth.uid() or public.is_manager(company_id));
+  using (user_id = auth.uid() or public.can(company_id, 'team'));
 
 drop policy if exists join_requests_insert on public.join_requests;
 create policy join_requests_insert on public.join_requests for insert
@@ -335,25 +436,25 @@ create policy join_requests_insert on public.join_requests for insert
 
 drop policy if exists join_requests_update on public.join_requests;
 create policy join_requests_update on public.join_requests for update
-  using (public.is_manager(company_id)) with check (public.is_manager(company_id));
+  using (public.can(company_id, 'team')) with check (public.can(company_id, 'team'));
 
 drop policy if exists join_requests_delete on public.join_requests;
 create policy join_requests_delete on public.join_requests for delete
-  using (user_id = auth.uid() or public.is_manager(company_id));
+  using (user_id = auth.uid() or public.can(company_id, 'team'));
 
 -- Запрошення: бачать лише керівники. Стороння людина не читає таблицю —
 -- вона активує код через функцію нижче.
 drop policy if exists invites_select on public.invites;
 create policy invites_select on public.invites for select
-  using (public.is_manager(company_id));
+  using (public.can(company_id, 'team'));
 
 drop policy if exists invites_insert on public.invites;
 create policy invites_insert on public.invites for insert
-  with check (public.is_manager(company_id) and created_by = auth.uid());
+  with check (public.can(company_id, 'team') and created_by = auth.uid());
 
 drop policy if exists invites_delete on public.invites;
 create policy invites_delete on public.invites for delete
-  using (public.is_manager(company_id));
+  using (public.can(company_id, 'team'));
 
 -- ---------------------------------------------------------------------------
 -- 8. Дії, які не можна віддати клієнтському коду
@@ -388,6 +489,13 @@ begin
 
   insert into public.memberships (company_id, user_id, role)
   values (new_company.id, auth.uid(), 'owner');
+
+  insert into public.company_roles (company_id, name, position, can_see_rental)
+  values
+    (new_company.id, 'Оператор', 1, true),
+    (new_company.id, 'Монтажер', 2, true),
+    (new_company.id, 'Помічник', 3, true)
+  on conflict do nothing;
 
   return new_company;
 end;
@@ -449,7 +557,7 @@ begin
   if req.id is null then
     raise exception 'Заявку не знайдено';
   end if;
-  if not public.is_manager(req.company_id) then
+  if not public.can(req.company_id, 'team') then
     raise exception 'Немає прав приймати заявки цієї фірми';
   end if;
 
@@ -573,28 +681,33 @@ alter table public.shared_payouts    enable row level security;
 -- Проєкти: читають і пишуть ЛИШЕ керівники. Для команди дороги сюди немає —
 -- вона ходить через функцію company_projects нижче.
 drop policy if exists shared_projects_all on public.shared_projects;
-create policy shared_projects_all on public.shared_projects for all
-  using (public.is_manager(company_id)) with check (public.is_manager(company_id));
+drop policy if exists shared_projects_select on public.shared_projects;
+create policy shared_projects_select on public.shared_projects for select
+  using (public.can(company_id, 'money'));
+
+drop policy if exists shared_projects_write on public.shared_projects;
+create policy shared_projects_write on public.shared_projects for all
+  using (public.can(company_id, 'edit')) with check (public.can(company_id, 'edit'));
 
 drop policy if exists shared_shoot_days_all on public.shared_shoot_days;
 create policy shared_shoot_days_all on public.shared_shoot_days for all
   using (exists (
     select 1 from public.shared_projects p
-    where p.id = project_id and public.is_manager(p.company_id)
+    where p.id = project_id and public.can(p.company_id, 'edit')
   ))
   with check (exists (
     select 1 from public.shared_projects p
-    where p.id = project_id and public.is_manager(p.company_id)
+    where p.id = project_id and public.can(p.company_id, 'edit')
   ));
 
 -- Гонорари: керівник бачить усі, людина — тільки свій власний рядок.
 drop policy if exists shared_payouts_select on public.shared_payouts;
 create policy shared_payouts_select on public.shared_payouts for select
-  using (public.is_manager(company_id) or user_id = auth.uid());
+  using (public.can(company_id, 'payouts') or user_id = auth.uid());
 
 drop policy if exists shared_payouts_write on public.shared_payouts;
 create policy shared_payouts_write on public.shared_payouts for all
-  using (public.is_manager(company_id)) with check (public.is_manager(company_id));
+  using (public.can(company_id, 'edit')) with check (public.can(company_id, 'edit'));
 
 -- ---------------------------------------------------------------------------
 -- 9а. Публікація проєкту у фірму
@@ -623,8 +736,8 @@ declare
   entry  jsonb;
   found  uuid;
 begin
-  if not public.is_manager(p_company) then
-    raise exception 'Публікувати проєкти може директор або адміністратор';
+  if not public.can(p_company, 'edit') then
+    raise exception 'Публікувати проєкти твоя роль не дозволяє';
   end if;
 
   insert into public.shared_projects as sp (
@@ -778,8 +891,8 @@ security definer
 set search_path = public
 as $$
 begin
-  if not public.is_manager(p_company) then
-    raise exception 'Прибрати проєкт може директор або адміністратор';
+  if not public.can(p_company, 'edit') then
+    raise exception 'Прибрати проєкт твоя роль не дозволяє';
   end if;
 
   delete from public.shared_projects
@@ -846,7 +959,7 @@ create policy shared_tasks_select on public.shared_tasks for select
 
 drop policy if exists shared_tasks_write on public.shared_tasks;
 create policy shared_tasks_write on public.shared_tasks for all
-  using (public.is_manager(company_id)) with check (public.is_manager(company_id));
+  using (public.can(company_id, 'edit')) with check (public.can(company_id, 'edit'));
 
 drop policy if exists shared_items_select on public.shared_items;
 create policy shared_items_select on public.shared_items for select
@@ -854,7 +967,7 @@ create policy shared_items_select on public.shared_items for select
 
 drop policy if exists shared_items_write on public.shared_items;
 create policy shared_items_write on public.shared_items for all
-  using (public.is_manager(company_id)) with check (public.is_manager(company_id));
+  using (public.can(company_id, 'edit')) with check (public.can(company_id, 'edit'));
 
 -- ---------------------------------------------------------------------------
 -- 9б. Що людина бачить
@@ -896,7 +1009,7 @@ as $$
     p.id,
     p.local_id,
     p.title,
-    p.client,
+    case when public.can(p.company_id, 'contacts') then p.client end,
     p.style,
     p.status,
     p.deadline,
@@ -904,10 +1017,10 @@ as $$
     p.latitude,
     p.longitude,
     p.currency,
-    case when public.is_manager(p.company_id) then p.fee end,
-    p.rental_cost,
-    p.other_cost,
-    case when public.is_manager(p.company_id) then p.payout_total end,
+    case when public.can(p.company_id, 'money') then p.fee end,
+    case when public.can(p.company_id, 'rental') then p.rental_cost end,
+    case when public.can(p.company_id, 'rental') then p.other_cost end,
+    case when public.can(p.company_id, 'money') then p.payout_total end,
     (
       select coalesce(sum(sp.amount), 0)
       from public.shared_payouts sp
@@ -919,7 +1032,7 @@ as $$
     ),
     p.notes,
     p.updated_at,
-    public.is_manager(p.company_id)
+    public.can(p.company_id, 'edit')
   from public.shared_projects p
   where p.company_id = p_company
     and public.is_member(p.company_id)
@@ -939,7 +1052,7 @@ as $$
   join public.shared_projects p on p.id = sp.project_id
   where sp.project_id = p_project
     and public.is_member(p.company_id)
-    and (public.is_manager(p.company_id) or sp.user_id = auth.uid())
+    and (public.can(p.company_id, 'payouts') or sp.user_id = auth.uid())
   order by sp.amount desc;
 $$;
 
@@ -973,7 +1086,12 @@ security definer
 stable
 set search_path = public
 as $$
-  select i.title, i.category, i.count_label, i.ownership, i.cost, i.currency, i.notes
+  select
+    i.title, i.category, i.count_label, i.ownership,
+    -- Що везти — робота, і це видно всім. У скільки воно обходиться фірмі —
+    -- уже гроші, і на них потрібен дозвіл.
+    case when public.can(p.company_id, 'rental') then i.cost end,
+    i.currency, i.notes
   from public.shared_items i
   join public.shared_projects p on p.id = i.project_id
   where i.project_id = p_project and public.is_member(p.company_id)
@@ -999,7 +1117,7 @@ as $$
     and public.is_member(p.company_id)
     and not t.done
     -- Керівник бачить усі задачі фірми, решта — свої та спільні (нічиї).
-    and (public.is_manager(p.company_id) or t.assignee_id = auth.uid() or t.assignee_id is null)
+    and (public.can(p.company_id, 'edit') or t.assignee_id = auth.uid() or t.assignee_id is null)
   order by coalesce(t.assignee_id = auth.uid(), false) desc, t.due nulls last, t.position;
 $$;
 

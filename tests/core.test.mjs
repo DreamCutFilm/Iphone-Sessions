@@ -24,6 +24,7 @@ import { createEquipment, unitMargin } from '../src/core/equipment.js';
 import { makeSlug, isValidSlug, generateCode, roleLabel, canManage } from '../src/core/account.js';
 import { createCrew, crewLabel, clientRate, crewMargin, normalizeCrew } from '../src/core/crew.js';
 import { buildProjectPayload, unlinkedPayouts, sharedProfit } from '../src/core/sharing.js';
+import { permissionsOf, emptyRole, describeRole, sensitiveGrants } from '../src/core/roles.js';
 import {
   createEstimate, createItem, itemAmount, estimateTotals,
   totalsByCategory, clientView, itemFromEquipment, estimateToText, describeItemCount,
@@ -964,4 +965,48 @@ test('публікація: задачі й техніка їдуть у фір�
   const own = sent.items.find((item) => item.title === 'Sony FX6');
   assert.equal(own.cost, 2000, '2 камери × 1 зміна × 1000');
   assert.ok(!('unit_price' in own), 'ціни для клієнта в техніці немає й бути не може');
+});
+
+test('ролі: директора обмежити не можна, адміністратор не керує командою', () => {
+  const owner = permissionsOf({ role: 'owner', roleGrants: null });
+  assert.ok(Object.values(owner).every(Boolean), 'директор бачить і може все');
+
+  const admin = permissionsOf({ role: 'admin', roleGrants: null });
+  assert.ok(admin.can_see_client_money, 'адміністратор бачить гроші');
+  assert.ok(admin.can_edit, 'і править проєкти');
+  assert.ok(!admin.can_manage_team, 'але ролей не роздає');
+});
+
+test('ролі: без ролі людині видно лише роботу, без грошей', () => {
+  const plain = permissionsOf({ role: 'member', roleGrants: null });
+  assert.ok(plain.can_see_rental, 'що везти — видно, інакше їхати нема з чим');
+  assert.ok(!plain.can_see_client_money);
+  assert.ok(!plain.can_see_all_payouts);
+  assert.ok(!plain.can_edit);
+
+  const editor = permissionsOf({
+    role: 'member',
+    roleGrants: { ...emptyRole('Старший оператор'), can_edit: true },
+  });
+  assert.ok(editor.can_edit, 'роль може дати право правити');
+  assert.ok(!editor.can_see_client_money, 'і при цьому не відкрити гроші клієнта');
+});
+
+test('ролі: нова роль нікому нічого не відкриває, крім оренди', () => {
+  const fresh = emptyRole('Помічник');
+  assert.equal(fresh.can_see_rental, true);
+  assert.equal(fresh.can_see_client_money, false);
+  assert.equal(fresh.can_manage_team, false);
+  assert.equal(describeRole(fresh), 'Оренда техніки'.toLowerCase());
+
+  const bare = { ...fresh, can_see_rental: false };
+  assert.equal(describeRole(bare), 'Бачить тільки свої задачі та гонорар');
+});
+
+test('ролі: небезпечні дозволи називаються перед збереженням', () => {
+  const role = { ...emptyRole('Продюсер'), can_see_client_money: true, can_manage_team: true };
+  const risky = sensitiveGrants(role).map((item) => item.id);
+
+  assert.deepEqual(risky, ['can_see_client_money', 'can_manage_team']);
+  assert.ok(!sensitiveGrants(emptyRole('Оператор')).length, 'сама лише оренда не тривожить');
 });
