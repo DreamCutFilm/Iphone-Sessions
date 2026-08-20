@@ -3,6 +3,7 @@
 import { el, mount, toast } from './ui/dom.js';
 import { completeGoogleSignIn, isSignedIn } from './core/cloud.js';
 import { knownCompanies, onContextChange } from './core/context.js';
+import { onLanguageChange, getLanguage } from './core/i18n.js';
 import { route, setNotFound, startRouter, navigate, setNavigationListener, rerender } from './ui/router.js';
 import { subscribe, saveNow } from './core/store.js';
 import { isSheetOpen, onSheetClosed } from './ui/sheet.js';
@@ -149,6 +150,18 @@ onContextChange(() => {
   buildTabs(window.location.hash.replace(/^#/, '') || '/overview');
   rerender();
 });
+
+// Зміна мови стосується всього застосунку, а не лише екрана налаштувань:
+// підписи вкладок унизу малюються окремо й самі про це не дізнаються.
+onLanguageChange(() => {
+  document.documentElement.lang = getLanguage();
+  buildTabs(window.location.hash.replace(/^#/, '') || '/overview');
+  rerender();
+});
+
+// Мова сторінки — не дрібниця: від неї залежать перенос слів і те, як
+// екранний диктор вимовляє написане.
+document.documentElement.lang = getLanguage();
 
 startRouter();
 startReminders();

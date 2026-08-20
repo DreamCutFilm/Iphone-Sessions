@@ -1,6 +1,7 @@
 // Налаштування: значення за замовчуванням, локація, резервні копії.
 
 import { el, toast } from '../dom.js';
+import { t } from '../../core/i18n.js';
 import { pageHeader, sectionTitle } from '../components.js';
 import { field, selectInput, numberInput, textInput, confirmSheet } from '../sheet.js';
 import { getState, patchSettings, replaceState, damagedData, forgetDamagedData } from '../../core/store.js';
@@ -9,7 +10,7 @@ import { storageName } from '../../core/storage.js';
 import { SENSORS } from '../../core/cine/sensors.js';
 import { CODECS } from '../../core/cine/media.js';
 import { COMMON_FPS } from '../../core/cine/exposure.js';
-import { LANGUAGES, CURRENCIES, getLanguage, getCurrency, formatMoney } from '../../core/locale.js';
+import { LANGUAGES, CURRENCIES, getLanguage, setLanguage, getCurrency, formatMoney } from '../../core/locale.js';
 import { notificationState, requestNotifications } from '../reminders.js';
 import { navigate } from '../router.js';
 import { isSignedIn, currentUser } from '../../core/cloud.js';
@@ -35,11 +36,11 @@ export function settingsView() {
       { value: state.settings.sensorId, onchange: (event) => patchSettings({ sensorId: event.target.value }) },
     ), 'Підставляється в калькулятори оптики.'),
     field('Кодек', selectInput(
-      CODECS.map((codec) => ({ value: codec.id, label: `${codec.group} · ${codec.label}` })),
+      CODECS.map((codec) => ({ value: codec.id, label: `${t(codec.group)} · ${codec.label}` })),
       { value: state.settings.codecId, onchange: (event) => patchSettings({ codecId: event.target.value }) },
     )),
     field('Кадрова частота', selectInput(
-      COMMON_FPS.map((fps) => ({ value: String(fps), label: `${fps} к/с` })),
+      COMMON_FPS.map((fps) => ({ value: String(fps), label: `${fps} ${t('к/с')}` })),
       { value: String(state.settings.fps), onchange: (event) => patchSettings({ fps: Number(event.target.value) }) },
     )),
   ));
@@ -75,7 +76,7 @@ export function settingsView() {
   page.append(el(
     'div.form',
     el('p.settings-note',
-      `Зараз збережено: ${state.projects.length} проєктів, ${state.tasks.length} задач, ${state.ideas.length} ідей. ` +
+      t('Зараз збережено: {projects} проєктів, {tasks} задач, {ideas} ідей. ', { projects: state.projects.length, tasks: state.tasks.length, ideas: state.ideas.length }) +
       'Усе лежить локально на цьому пристрої й нікуди не надсилається.'),
     el('button.btn.btn--primary.btn--wide', { type: 'button', onclick: exportBackup }, '⇩ Зберегти резервну копію'),
     el('button.btn.btn--ghost.btn--wide', { type: 'button', onclick: () => importBackup({ merge: true }) }, '⇧ Долити з копії'),
@@ -98,8 +99,8 @@ export function settingsView() {
   page.append(el(
     'div.about',
     el('p.about-name', 'DreamCut App'),
-    el('p.about-line', `Версія ${APP_VERSION}`),
-    el('p.about-line', `Сховище: ${storageName()}`),
+    el('p.about-line', t('Версія {version}', { version: APP_VERSION })),
+    el('p.about-line', t('Сховище: {name}', { name: storageName() })),
     el('p.about-line', 'Працює офлайн. Розрахунки виконуються на пристрої.'),
   ));
   page.append(el('div.form', updateButton()));
@@ -135,44 +136,39 @@ function accountBlock() {
 }
 
 function localeBlock(state) {
-  const language = getLanguage(state.settings.language);
-
   const block = el(
     'div.form',
     field('Мова інтерфейсу', selectInput(
-      LANGUAGES.map((item) => ({
-        value: item.id,
-        label: item.ready ? item.native : `${item.native} — скоро`,
-      })),
+      // Назви мов не перекладаються: людина, яка шукає свою мову у списку,
+      // шукає її написаною по-своєму.
+      LANGUAGES.map((item) => ({ value: item.id, label: item.native })),
       {
-        value: state.settings.language,
+        value: getLanguage(),
         onchange: (event) => {
-          const chosen = getLanguage(event.target.value);
-          patchSettings({ language: chosen.id });
-          toast(chosen.ready
-            ? `Мова: ${chosen.native}`
-            : `${chosen.native} ще в роботі — інтерфейс поки українською`);
+          const chosen = setLanguage(event.target.value);
+          // Мову зберігаємо і в налаштуваннях: так вона поїде разом із
+          // резервною копією, як і решта вибору людини. Перемалює екран
+          // підписник у app.js — разом із нижніми вкладками.
+          patchSettings({ language: chosen });
         },
       },
-    ), language.ready
-      ? null
-      : 'Переклад готується. Вибір збережено — інтерфейс перемкнеться сам, щойно тексти зʼявляться.'),
+    )),
 
     field('Валюта', selectInput(
       CURRENCIES.map((currency) => ({
         value: currency.code,
-        label: `${currency.label} (${currency.symbol})`,
+        label: `${t(currency.label)} (${currency.symbol})`,
       })),
       {
         value: state.settings.currency,
         onchange: (event) => {
           patchSettings({ currency: event.target.value });
-          toast(`Валюта: ${getCurrency(event.target.value).label}`);
+          toast(t('Валюта: {name}', { name: t(getCurrency(event.target.value).label) }));
         },
       },
     ), 'Змінює лише підпис сум. Уже введені гонорари не перераховуються за курсом — щоб історія проєктів не спотворювалась.'),
 
-    el('p.settings-note', `Приклад: ${formatMoney(48000, state.settings.currency)}`),
+    el('p.settings-note', t('Приклад: {sum}', { sum: formatMoney(48000, state.settings.currency) })),
   );
 
   return block;
@@ -266,7 +262,7 @@ function updateButton() {
     onclick: async (event) => {
       const button = event.currentTarget;
       button.disabled = true;
-      button.textContent = 'Перевіряю…';
+      button.textContent = t('Перевіряю…');
 
       try {
         const registration = await navigator.serviceWorker.getRegistration();
@@ -282,12 +278,12 @@ function updateButton() {
           return;
         }
 
-        toast(`У тебе найновіша версія — ${APP_VERSION}`);
+        toast(t('У тебе найновіша версія — {version}', { version: APP_VERSION }));
       } catch {
         toast('Не вдалося перевірити. Потрібен інтернет.', { error: true });
       } finally {
         button.disabled = false;
-        button.textContent = '⟳ Перевірити оновлення';
+        button.textContent = t('⟳ Перевірити оновлення');
       }
     },
   }, '⟳ Перевірити оновлення');
@@ -319,10 +315,10 @@ function importBackup({ merge }) {
       const text = await file.text();
       if (merge) {
         const added = mergeBackup(text);
-        toast(`Долито: ${added.projects} проєктів, ${added.tasks} задач, ${added.ideas} ідей`);
+        toast(t('Долито: {projects} проєктів, {tasks} задач, {ideas} ідей', { projects: added.projects, tasks: added.tasks, ideas: added.ideas }));
       } else {
         const restored = restoreBackup(text);
-        toast(`Відновлено: ${restored.projects} проєктів, ${restored.tasks} задач, ${restored.ideas} ідей`);
+        toast(t('Відновлено: {projects} проєктів, {tasks} задач, {ideas} ідей', { projects: restored.projects, tasks: restored.tasks, ideas: restored.ideas }));
       }
     } catch (error) {
       toast(error.message, { error: true });

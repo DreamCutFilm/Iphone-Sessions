@@ -13,6 +13,7 @@
 
 import { newId } from './id.js';
 import { DEFAULT_CURRENCY } from './locale.js';
+import { t, pluralWord } from './i18n.js';
 
 export const ESTIMATE_STATUSES = [
   { id: 'draft', label: 'Чернетка', hint: 'Ще рахуємо' },
@@ -59,17 +60,11 @@ const UNIT_FORMS = {
   'км': ['км', 'км', 'км'],
 };
 
-/** Одиниця у формі, узгодженій із числом. */
+/** Одиниця у формі, узгодженій із числом і мовою. */
 export function unitLabel(unit, count) {
   const forms = UNIT_FORMS[unit];
-  if (!forms) return unit;
-
-  const abs = Math.abs(Math.round(count)) % 100;
-  const last = abs % 10;
-  if (abs > 10 && abs < 20) return forms[2];
-  if (last === 1) return forms[0];
-  if (last >= 2 && last <= 4) return forms[1];
-  return forms[2];
+  if (!forms) return t(unit);
+  return pluralWord(Math.round(count), ...forms);
 }
 
 /**
@@ -282,12 +277,12 @@ export function estimateToText(estimate, formatAmount) {
   }
 
   if (view.discount > 0) {
-    lines.push(`Сума: ${money(view.subtotal)}`);
-    lines.push(`Знижка: −${money(view.discount)}`);
+    lines.push(`${t('Сума')}: ${money(view.subtotal)}`);
+    lines.push(`${t('Знижка')}: −${money(view.discount)}`);
   }
-  if (view.tax > 0) lines.push(`Податок: ${money(view.tax)}`);
+  if (view.tax > 0) lines.push(`${t('Податок')}: ${money(view.tax)}`);
 
-  lines.push(`РАЗОМ: ${money(view.total)}`);
+  lines.push(`${t('РАЗОМ')}: ${money(view.total)}`);
 
   if (view.notes) {
     lines.push('');

@@ -3,6 +3,21 @@
 // Без фреймворку — щоб застосунок відкривався миттєво, важив кілька десятків
 // кілобайт і не мав збірки. Це ж робить перенесення в нативну оболонку
 // тривіальним: там просто лежать ті самі файли.
+//
+// Тут же відбувається переклад. Через el() проходить кожне слово, яке
+// показує застосунок, — тож одне місце робить те, на що інакше пішла б
+// тисяча правок у екранах, і жоден новий екран не забуде перекластися.
+// Дані людини (назва проєкту, імʼя в команді) у словнику не значаться,
+// тому повертаються як є. Виняток буває один: якщо людина назве проєкт
+// точнісінько так, як звучить якийсь напис у застосунку, назва перекладеться
+// разом із ним. Ціна невелика — і вона куди менша за тисячу правок, які
+// довелося б рознести по екранах, аби перекладати кожен напис окремо.
+
+import { t } from '../core/i18n.js';
+
+// Написи, які живуть у властивостях, а не в тексті. Решту атрибутів не
+// чіпаємо: там ідентифікатори й класи, які перекладати не можна.
+const TEXT_PROPS = new Set(['placeholder', 'title', 'aria-label', 'alt', 'value']);
 
 /**
  * el('div.card', { onclick }, 'текст', childNode)
@@ -44,9 +59,13 @@ function applyProps(node, props) {
     else if (key.startsWith('on') && typeof value === 'function') {
       node.addEventListener(key.slice(2), value);
     } else if (key in node && key !== 'list') {
-      node[key] = value;
+      // value перекладаємо лише у кнопки: в полі вводу це текст людини,
+      // і підміна словником стерла б написане.
+      node[key] = TEXT_PROPS.has(key) && (key !== 'value' || node.tagName === 'BUTTON')
+        ? t(String(value))
+        : value;
     } else {
-      node.setAttribute(key, value === true ? '' : value);
+      node.setAttribute(key, value === true ? '' : TEXT_PROPS.has(key) ? t(String(value)) : value);
     }
   }
 }
@@ -54,7 +73,7 @@ function applyProps(node, props) {
 function append(node, children) {
   for (const child of children.flat(Infinity)) {
     if (child === null || child === undefined || child === false) continue;
-    node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+    node.append(child instanceof Node ? child : document.createTextNode(t(String(child))));
   }
 }
 
@@ -116,7 +135,7 @@ export function toast(message, { error = false } = {}) {
     node = el('div.toast');
     document.body.append(node);
   }
-  node.textContent = message;
+  node.textContent = t(message);
   node.classList.toggle('toast--error', error);
   node.classList.add('toast--visible');
 

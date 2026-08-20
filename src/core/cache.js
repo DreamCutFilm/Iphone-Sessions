@@ -11,6 +11,7 @@
 // за ними виїжджають на зйомку.
 
 import { readJson, writeJson, removeKey } from './storage.js';
+import { t } from './i18n.js';
 
 const PREFIX = 'dreamcut.cache.';
 
@@ -62,13 +63,13 @@ export function describeAge(at, now = Date.now()) {
 
   const minutes = Math.floor((now - at) / 60000);
   if (minutes < 2) return 'щойно';
-  if (minutes < 60) return `${minutes} хв тому`;
+  if (minutes < 60) return t('{minutes} хв тому', { minutes });
 
   const date = new Date(at);
   const time = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 
   const sameDay = new Date(now).toDateString() === date.toDateString();
-  if (sameDay) return `о ${time}`;
+  if (sameDay) return t('о {time}', { time });
 
   const months = ['січня', 'лютого', 'березня', 'квітня', 'травня', 'червня',
     'липня', 'серпня', 'вересня', 'жовтня', 'листопада', 'грудня'];

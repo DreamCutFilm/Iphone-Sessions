@@ -3,6 +3,7 @@
 // Окремо оброблено drop-frame — режим для 29.97 і 59.94, де з нумерації
 // викидають кадри, щоб таймкод не розʼїхався з реальним часом. Це стабільне
 // джерело плутанини на майданчику, тому рахуємо його чесно, а не «майже».
+import { t } from '../i18n.js';
 
 export function isDropFrameRate(fps) {
   const rate = Number(fps);
@@ -126,9 +127,9 @@ export function formatSeconds(totalSeconds) {
   const minutes = Math.floor((value % 3600) / 60);
   const seconds = value % 60;
   const parts = [];
-  if (hours) parts.push(`${hours} год`);
-  if (minutes) parts.push(`${minutes} хв`);
-  if (seconds || parts.length === 0) parts.push(`${seconds} с`);
+  if (hours) parts.push(`${hours} ${t('год')}`);
+  if (minutes) parts.push(`${minutes} ${t('хв')}`);
+  if (seconds || parts.length === 0) parts.push(`${seconds} ${t('с')}`);
   return parts.join(' ');
 }
 

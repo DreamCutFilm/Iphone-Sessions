@@ -10,6 +10,7 @@
 // туди порожнечу й затерла суму, якої ніколи не бачила.
 
 import { el, toast } from './dom.js';
+import { t } from '../core/i18n.js';
 import {
   openSheet, closeSheet, confirmSheet, field, formBody,
   textInput, selectInput, numberInput, segmented,
@@ -66,12 +67,12 @@ export function editFirmGear(existing, company, onDone) {
         draft.ownership,
         (value) => { draft.ownership = value; },
       )),
-      seesRate ? field(`Ціна клієнту за зміну, ${symbol}`, numberInput({
+      seesRate ? field(t('Ціна клієнту за зміну, {symbol}', { symbol }), numberInput({
         value: draft.dayRate ?? '',
         placeholder: '0',
         oninput: (event) => { draft.dayRate = parseMoney(event.target.value); },
       })) : null,
-      seesCost ? field(`Собівартість за зміну, ${symbol}`, numberInput({
+      seesCost ? field(t('Собівартість за зміну, {symbol}', { symbol }), numberInput({
         value: draft.dayCost ?? '',
         placeholder: '0',
         oninput: (event) => { draft.dayCost = parseMoney(event.target.value); },
@@ -86,7 +87,7 @@ export function editFirmGear(existing, company, onDone) {
       existing,
       onDelete: () => confirmSheet({
         title: 'Прибрати з каталогу?',
-        message: `«${existing.title}» зникне в усієї команди.`,
+        message: t('«{name}» зникне в усієї команди.', { name: existing.title }),
         onConfirm: () => run(() => removeFirmEquipment(company.id, existing.id), 'Прибрано', onDone),
       }),
       onSave: () => {
@@ -126,12 +127,12 @@ export function editFirmPerson(existing, company, onDone) {
         placeholder: 'Хто саме',
         oninput: (event) => { draft.name = event.target.value; },
       })),
-      seesFee ? field(`Гонорар за зміну, ${symbol}`, numberInput({
+      seesFee ? field(t('Гонорар за зміну, {symbol}', { symbol }), numberInput({
         value: draft.fee ?? '',
         placeholder: '0',
         oninput: (event) => { draft.fee = parseMoney(event.target.value); },
       }), 'Скільки фірма платить цій людині.') : null,
-      seesRate ? field(`Ставка клієнту за зміну, ${symbol}`, numberInput({
+      seesRate ? field(t('Ставка клієнту за зміну, {symbol}', { symbol }), numberInput({
         value: draft.rate ?? '',
         placeholder: 'стільки ж, скільки гонорар',
         oninput: (event) => { draft.rate = parseMoney(event.target.value); },
@@ -160,7 +161,7 @@ export function editFirmPerson(existing, company, onDone) {
       existing,
       onDelete: () => confirmSheet({
         title: 'Прибрати з каталогу?',
-        message: `${existing.name || existing.role} зникне з каталогу фірми. `
+        message: t('{name} зникне з каталогу фірми. ', { name: existing.name || existing.role })
           + 'З команди людину це не виганяє — вона лишається у фірмі.',
         onConfirm: () => run(() => removeFirmCrew(company.id, existing.id), 'Прибрано', onDone),
       }),
@@ -184,10 +185,10 @@ function actions({ existing, onDelete, onSave }) {
       onclick: async (event) => {
         const button = event.currentTarget;
         button.disabled = true;
-        button.textContent = 'Зберігаю…';
+        button.textContent = t('Зберігаю…');
         await onSave();
         button.disabled = false;
-        button.textContent = 'Зберегти';
+        button.textContent = t('Зберегти');
       },
     }, 'Зберегти'),
   ];

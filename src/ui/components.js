@@ -1,6 +1,7 @@
 // Спільні блоки інтерфейсу, які повторюються на кількох екранах.
 
 import { el, haptic } from './dom.js';
+import { t } from '../core/i18n.js';
 import { navigate } from './router.js';
 import { patchItem, getState } from '../core/store.js';
 import { formatMoney as formatMoneyIn } from '../core/locale.js';
@@ -74,7 +75,7 @@ export function projectCard(project, { taskCount = 0, openCount = 0 } = {}) {
   if (project.style) meta.push(chip(project.style, 'project'));
   if (project.deadline) meta.push(chip(`⚑ ${describeDue(project.deadline)}`, dueVariant(project.deadline)));
   if (project.shootDays.length) meta.push(chip(`🎥 ${project.shootDays.length}`));
-  if (openCount) meta.push(chip(`✓ ${openCount} з ${taskCount}`));
+  if (openCount) meta.push(chip(`✓ ${openCount} ${t('з')} ${taskCount}`));
   if (typeof project.fee === 'number' && !project.paid) meta.push(chip(`${formatMoney(project.fee)}`, 'money'));
 
   return el(

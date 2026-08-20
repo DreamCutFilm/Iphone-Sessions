@@ -4,14 +4,9 @@
 // бо new Date('2026-08-10') трактує рядок як UTC і в нашому поясі може дати
 // попередній день. Для календаря оператора така помилка неприпустима.
 
+import { t, plural, calendarNames } from './i18n.js';
+
 const MS_PER_DAY = 86_400_000;
-
-const MONTHS_GENITIVE = [
-  'січня', 'лютого', 'березня', 'квітня', 'травня', 'червня',
-  'липня', 'серпня', 'вересня', 'жовтня', 'листопада', 'грудня',
-];
-
-const WEEKDAYS_SHORT = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 
 /** 'YYYY-MM-DD' → Date у локальній півночі. */
 export function parseDateOnly(value) {
@@ -75,39 +70,38 @@ export function daysUntil(dateOnlyValue, from = new Date()) {
 export function formatDate(dateOnlyValue) {
   const date = parseDateOnly(dateOnlyValue);
   if (!date) return '';
-  const base = `${date.getDate()} ${MONTHS_GENITIVE[date.getMonth()]}`;
+
+  // Порядок слів у даті різний: «10 серпня», але «August 10».
+  const { months, dateOrder } = calendarNames();
+  const month = months[date.getMonth()];
+  const base = dateOrder === 'md'
+    ? `${month} ${date.getDate()}`
+    : `${date.getDate()} ${month}`;
+
   return date.getFullYear() === new Date().getFullYear() ? base : `${base} ${date.getFullYear()}`;
 }
 
 export function weekdayShort(dateOnlyValue) {
   const date = parseDateOnly(dateOnlyValue);
-  return date ? WEEKDAYS_SHORT[date.getDay()] : '';
+  return date ? calendarNames().weekdays[date.getDay()] : '';
 }
 
 /** Людський опис дедлайну: «Сьогодні», «Завтра», «Прострочено на 3 дні». */
 export function describeDue(dateOnlyValue) {
   const diff = daysUntil(dateOnlyValue);
   if (diff === null) return '';
-  if (diff === 0) return 'Сьогодні';
-  if (diff === 1) return 'Завтра';
-  if (diff === 2) return 'Післязавтра';
-  if (diff === -1) return 'Вчора';
-  if (diff < 0) return `Прострочено на ${plural(Math.abs(diff), 'день', 'дні', 'днів')}`;
-  if (diff <= 14) return `Через ${plural(diff, 'день', 'дні', 'днів')}`;
+  if (diff === 0) return t('Сьогодні');
+  if (diff === 1) return t('Завтра');
+  if (diff === 2) return t('Післязавтра');
+  if (diff === -1) return t('Вчора');
+  if (diff < 0) return t('Прострочено на {days}', { days: plural(Math.abs(diff), 'день', 'дні', 'днів') });
+  if (diff <= 14) return t('Через {days}', { days: plural(diff, 'день', 'дні', 'днів') });
   return formatDate(dateOnlyValue);
 }
 
-/** Український відмінок для чисел: 1 день, 2 дні, 5 днів. */
-export function plural(count, one, few, many) {
-  const abs = Math.abs(count) % 100;
-  const last = abs % 10;
-  let word = many;
-  if (abs < 11 || abs > 14) {
-    if (last === 1) word = one;
-    else if (last >= 2 && last <= 4) word = few;
-  }
-  return `${count} ${word}`;
-}
+// Відмінок числа переїхав до i18n: правило залежить від мови. Ре-експорт
+// лишається, бо половина застосунку кличе plural саме звідси.
+export { plural };
 
 export function formatTime(date) {
   if (!date) return '';

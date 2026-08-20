@@ -1,6 +1,8 @@
 // Каталог техніки з цінами оренди.
 
 import { el, emptyState } from '../dom.js';
+import { t } from '../../core/i18n.js';
+import { plural } from '../../core/dates.js';
 import { pageHeader, sectionTitle, chip, fab, statTile } from '../components.js';
 import { editEquipment } from '../estimate-forms.js';
 import { getState } from '../../core/store.js';
@@ -62,7 +64,7 @@ async function loadFirmGear(host, company) {
 
   if (!catalog.length) {
     parts.push(emptyState(
-      `У «${company.name}» ще немає техніки`,
+      t('У «{company}» ще немає техніки', { company: company.name }),
       mayEdit
         ? 'Додай позиції або перенеси свій каталог із телефона — на сторінці фірми.'
         : 'Керівник внесе техніку — і вона зʼявиться тут.',
@@ -98,7 +100,7 @@ async function loadFirmGear(host, company) {
         item.notes && el('p.row-note', item.notes),
         el('div.row-meta',
           chip(item.ownership === 'own' ? 'Своя' : 'Орендуємо', item.ownership === 'own' ? 'money' : 'warn'),
-          item.dayCost !== null ? chip(`собівартість ${formatMoney(item.dayCost, currency)}`) : null)),
+          item.dayCost !== null ? chip(`${t('собівартість')} ${formatMoney(item.dayCost, currency)}`) : null)),
       item.dayRate !== null ? el('span.item-amount', formatMoney(item.dayRate, currency)) : null,
     ))));
   }
@@ -120,7 +122,7 @@ function myGearView() {
   const page = el('div.page');
 
   page.append(pageHeader('Каталог техніки', {
-    subtitle: `${catalog.length} позицій`,
+    subtitle: plural(catalog.length, 'позиція', 'позиції', 'позицій'),
     back: '/estimates',
     action: el('button.icon-btn', { type: 'button', 'aria-label': 'Додати техніку', onclick: () => editEquipment() }, '+'),
   }));
@@ -162,7 +164,7 @@ function myGearView() {
           item.notes && el('p.row-note', item.notes),
           el('div.row-meta',
             chip(item.ownership === 'own' ? 'Своя' : 'Оренда', item.ownership === 'own' ? 'money' : ''),
-            item.dayCost ? chip(`собівартість ${formatMoney(item.dayCost, currency)}`) : null,
+            item.dayCost ? chip(`${t('собівартість')} ${formatMoney(item.dayCost, currency)}`) : null,
             item.dayCost && margin !== 0 ? chip(`+${formatMoney(margin, currency)}`, margin > 0 ? '' : 'danger') : null)),
         el('span.item-amount', formatMoney(item.dayRate ?? 0, currency)),
       );

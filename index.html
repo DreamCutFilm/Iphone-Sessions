@@ -44,6 +44,52 @@
     (function () {
       var shown = false;
 
+      // Свій маленький словник: великий лежить у модулях, а вони до цього
+      // моменту саме й не завантажилися. Три речення — небагато, зате
+      // людина, яка не читає українською, зрозуміє, що робити.
+      var LANG = (function () {
+        try {
+          var stored = JSON.parse(localStorage.getItem('dreamcut.lang.v1'));
+          if (stored === 'pl' || stored === 'en') return stored;
+          var settings = JSON.parse(localStorage.getItem('dreamcut.ops.v1'));
+          var chosen = settings && settings.settings && settings.settings.language;
+          if (chosen === 'pl' || chosen === 'en') return chosen;
+        } catch (e) { /* сховище недоступне — лишаємось українською */ }
+        return 'uk';
+      })();
+
+      var WORDS = {
+        uk: {
+          title: 'Застосунок не запустився',
+          body: 'Твої проєкти, задачі й кошториси на місці — вони зберігаються окремо й не '
+            + 'постраждали. Спробуй полагодити: це скине завантажені файли й забере їх наново.',
+          fix: 'Полагодити',
+          show: 'Що саме сталося — покажи це розробнику:',
+          silent: 'Застосунок не намалював жодного екрана за чотири секунди. Найчастіше це означає, '
+            + 'що один із файлів не завантажився.',
+          missing: 'Не завантажився файл: ',
+        },
+        pl: {
+          title: 'Aplikacja się nie uruchomiła',
+          body: 'Twoje projekty, zadania i kosztorysy są na miejscu — zapisane osobno i nietknięte. '
+            + 'Spróbuj naprawić: to zrzuci pobrane pliki i weźmie je na nowo.',
+          fix: 'Napraw',
+          show: 'Co się stało — pokaż to programiście:',
+          silent: 'Aplikacja nie narysowała żadnego ekranu przez cztery sekundy. Najczęściej znaczy to, '
+            + 'że jeden z plików się nie wczytał.',
+          missing: 'Nie wczytał się plik: ',
+        },
+        en: {
+          title: 'The app did not start',
+          body: 'Your projects, tasks and estimates are safe — they are stored separately and were not '
+            + 'touched. Try repairing: this drops the downloaded files and fetches them again.',
+          fix: 'Repair',
+          show: 'What happened — show this to the developer:',
+          silent: 'The app drew no screen for four seconds. Usually that means one of its files did not load.',
+          missing: 'This file did not load: ',
+        },
+      }[LANG];
+
       function show(what) {
         if (shown) return;
         shown = true;
@@ -54,13 +100,11 @@
         screen.innerHTML =
           '<div style="padding:24px calc(env(safe-area-inset-left,0px) + 16px) 24px calc(env(safe-area-inset-right,0px) + 16px);' +
           'font:16px/1.45 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;color:#f2f3f5">' +
-          '<h1 style="font-size:22px;margin:0 0 10px">Застосунок не запустився</h1>' +
-          '<p style="color:#8b9099;margin:0 0 16px">Твої проєкти, задачі й кошториси на місці — ' +
-          'вони зберігаються окремо й не постраждали. Спробуй полагодити: це скине завантажені ' +
-          'файли й забере їх наново.</p>' +
+          '<h1 style="font-size:22px;margin:0 0 10px">' + WORDS.title + '</h1>' +
+          '<p style="color:#8b9099;margin:0 0 16px">' + WORDS.body + '</p>' +
           '<button id="fixBtn" style="width:100%;min-height:48px;border:0;border-radius:14px;' +
-          'background:#ffb020;color:#0b0c0e;font:600 16px inherit;margin-bottom:10px">Полагодити</button>' +
-          '<p style="color:#8b9099;font-size:14px;margin:16px 0 6px">Що саме сталося — покажи це розробнику:</p>' +
+          'background:#ffb020;color:#0b0c0e;font:600 16px inherit;margin-bottom:10px">' + WORDS.fix + '</button>' +
+          '<p style="color:#8b9099;font-size:14px;margin:16px 0 6px">' + WORDS.show + '</p>' +
           '<pre style="white-space:pre-wrap;word-break:break-word;background:#15171b;border-radius:10px;' +
           'padding:12px;font-size:12px;color:#ff5b52;margin:0">' + String(what).replace(/[<&]/g, ' ') + '</pre>' +
           '</div>';
@@ -84,7 +128,7 @@
       window.addEventListener('error', function (event) {
         // Помилки завантаження окремих картинок екран не валять.
         if (event.target && event.target !== window && event.target.tagName === 'IMG') return;
-        show(event.message || ('Не завантажився файл: ' + (event.target && event.target.src)));
+        show(event.message || (WORDS.missing + (event.target && event.target.src)));
       }, true);
 
       window.addEventListener('unhandledrejection', function (event) {
@@ -96,7 +140,7 @@
       setTimeout(function () {
         var screen = document.getElementById('screen');
         if (screen && !screen.childElementCount) {
-          show('Застосунок не намалював жодного екрана за чотири секунди. Найчастіше це означає, що один із файлів не завантажився.');
+          show(WORDS.silent);
         }
       }, 4000);
     })();
