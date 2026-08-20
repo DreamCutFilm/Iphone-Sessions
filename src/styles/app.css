@@ -158,6 +158,41 @@ body.is-locked { overscroll-behavior: none; }
   content: ''; flex: 1; height: 1px; background: var(--line);
 }
 
+/* Перемикач «Моє / фірма».
+   Прокручується вбік: фірм може бути кілька, а ширина екрана в iPhone одна.
+   Смуги прокрутки не показуємо — на телефоні вона лише заважає. */
+.context-bar {
+  display: flex; gap: 6px;
+  margin: 0 0 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.context-bar::-webkit-scrollbar { display: none; }
+
+.context-chip {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font: 500 14px inherit;
+  padding: 7px 14px;
+  min-height: 36px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.context-chip.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0b0c0e;
+  font-weight: 600;
+}
+
+/* Підпис про несвіжі дані. Жовтий, а не червоний: це не поломка,
+   а чесне попередження, що показане завантажилось раніше. */
+.settings-note--stale { color: var(--warn); }
+
 /* Список своїх під полем пошти. Обмежуємо висоту: у великій фірмі він
    інакше виштовхнув би кнопку «Зберегти» кудись за край екрана. */
 .team-pick { margin-top: -4px; }

@@ -11,7 +11,8 @@ import { formatDate, daysUntil, describeDue } from '../../core/dates.js';
 import { chip, dueVariant } from '../components.js';
 import { navigate } from '../router.js';
 import { isSignedIn } from '../../core/cloud.js';
-import { activeCompany } from '../../core/account.js';
+import { currentCompany, inCompany } from '../../core/context.js';
+import { contextBar, freshnessNote } from '../context-bar.js';
 import { myFirmTasks } from '../../core/sharing.js';
 
 // Фільтр живе поза перемальовуванням, щоб вибір не скидався при зміні даних.
@@ -49,6 +50,7 @@ export function tasksView() {
       },
     }, filter.label));
   }
+  appendIf(page, contextBar());
   page.append(tabs);
 
   const render = (list) => el('div.list', list.map((task) => taskRow(task, {
@@ -100,14 +102,15 @@ export function tasksView() {
 }
 
 function firmTasksBlock() {
-  if (!isSignedIn()) return null;
-  const company = activeCompany();
+  if (!isSignedIn() || !inCompany()) return null;
+  const company = currentCompany();
   if (!company) return null;
 
   const host = el('div');
 
   myFirmTasks(company.id)
-    .then((tasks) => {
+    .then((result) => {
+      const tasks = result.value;
       if (!tasks.length) return;
 
       // Свої — вгору. Спільні (нічиї) теж показуємо: часто це саме те,
@@ -137,10 +140,14 @@ function firmTasksBlock() {
         parts.push(sectionTitle('Спільні у фірмі', el('span.section-hint', company.name)));
         parts.push(rows(shared));
       }
+      const stale = freshnessNote(result);
+      if (stale) parts.push(stale);
+
       host.replaceChildren(...parts);
     })
     .catch(() => {
-      // Немає мережі — свої задачі на місці, і це головне.
+      // Немає мережі й нічого не памʼятаємо — свої задачі на місці,
+      // і це головне.
     });
 
   return host;

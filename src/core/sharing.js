@@ -10,6 +10,7 @@
 // найгірше, що може статися від помилки тут, — щось не покажеться.
 
 import { rpc } from './cloud.js';
+import { withMemory, forget } from './cache.js';
 import { projectById, projectFinance, projectPayouts, tasksOfProject, billingEstimates } from './selectors.js';
 import { itemCost, describeItemCount } from './estimates.js';
 
@@ -159,64 +160,84 @@ export async function unpublishProject(companyId, localId) {
   return rpc('unpublish_project', { p_company: companyId, p_local_id: localId });
 }
 
-/** Проєкти фірми — уже підрізані базою під того, хто питає. */
-export async function companyProjects(companyId) {
-  const rows = await rpc('company_projects', { p_company: companyId });
-  return (rows ?? []).map(fromRow);
+/**
+ * Проєкти фірми — уже підрізані базою під того, хто питає.
+ *
+ * Повертає { value, at, fresh }. Форма з памʼяттю однакова для всіх читань:
+ * екран мусить знати, свіже це чи вчорашнє, і сказати про це людині.
+ */
+export function companyProjects(companyId) {
+  return withMemory(`projects.${companyId}`, async () => {
+    const rows = await rpc('company_projects', { p_company: companyId });
+    return (rows ?? []).map(fromRow);
+  });
 }
 
-export async function projectPayoutRows(projectId) {
-  const rows = await rpc('project_payouts', { p_project: projectId });
-  return (rows ?? []).map((row) => ({
-    name: row.name || 'Без імені',
-    role: row.role_title || '',
-    amount: Number(row.amount) || 0,
-    currency: row.currency,
-    isMine: Boolean(row.is_mine),
-  }));
+/** Забути памʼять фірми — після виходу з неї чи зміни ролі. */
+export function forgetCompany(companyId) {
+  for (const key of ['projects', 'tasks']) forget(`${key}.${companyId}`);
 }
 
-export async function sharedTasks(projectId) {
-  const rows = await rpc('project_tasks', { p_project: projectId });
-  return (rows ?? []).map((row) => ({
-    id: row.id,
-    title: row.title,
-    assignee: row.assignee_name ?? '',
-    due: row.due,
-    done: Boolean(row.done),
-    priority: row.priority,
-    notes: row.notes ?? '',
-    isMine: Boolean(row.is_mine),
-  }));
+export function projectPayoutRows(projectId) {
+  return withMemory(`payouts.${projectId}`, async () => {
+    const rows = await rpc('project_payouts', { p_project: projectId });
+    return (rows ?? []).map((row) => ({
+      name: row.name || 'Без імені',
+      role: row.role_title || '',
+      amount: Number(row.amount) || 0,
+      currency: row.currency,
+      isMine: Boolean(row.is_mine),
+    }));
+  });
 }
 
-export async function sharedItems(projectId) {
-  const rows = await rpc('project_items', { p_project: projectId });
-  return (rows ?? []).map((row) => ({
-    title: row.title,
-    category: row.category ?? '',
-    count: row.count_label ?? '',
-    ownership: row.ownership ?? '',
-    cost: Number(row.cost) || 0,
-    currency: row.currency,
-    notes: row.notes ?? '',
-  }));
+export function sharedTasks(projectId) {
+  return withMemory(`ptasks.${projectId}`, async () => {
+    const rows = await rpc('project_tasks', { p_project: projectId });
+    return (rows ?? []).map((row) => ({
+      id: row.id,
+      title: row.title,
+      assignee: row.assignee_name ?? '',
+      due: row.due,
+      done: Boolean(row.done),
+      priority: row.priority,
+      notes: row.notes ?? '',
+      isMine: Boolean(row.is_mine),
+    }));
+  });
+}
+
+export function sharedItems(projectId) {
+  return withMemory(`pitems.${projectId}`, async () => {
+    const rows = await rpc('project_items', { p_project: projectId });
+    return (rows ?? []).map((row) => ({
+      title: row.title,
+      category: row.category ?? '',
+      count: row.count_label ?? '',
+      ownership: row.ownership ?? '',
+      cost: Number(row.cost) || 0,
+      currency: row.currency,
+      notes: row.notes ?? '',
+    }));
+  });
 }
 
 /** Мої задачі по всій фірмі — для звичайного екрана задач. */
-export async function myFirmTasks(companyId) {
-  const rows = await rpc('my_company_tasks', { p_company: companyId });
-  return (rows ?? []).map((row) => ({
-    id: row.id,
-    title: row.title,
-    due: row.due,
-    done: Boolean(row.done),
-    priority: row.priority,
-    notes: row.notes ?? '',
-    projectId: row.project_id,
-    projectTitle: row.project_title,
-    isMine: Boolean(row.is_mine),
-  }));
+export function myFirmTasks(companyId) {
+  return withMemory(`tasks.${companyId}`, async () => {
+    const rows = await rpc('my_company_tasks', { p_company: companyId });
+    return (rows ?? []).map((row) => ({
+      id: row.id,
+      title: row.title,
+      due: row.due,
+      done: Boolean(row.done),
+      priority: row.priority,
+      notes: row.notes ?? '',
+      projectId: row.project_id,
+      projectTitle: row.project_title,
+      isMine: Boolean(row.is_mine),
+    }));
+  });
 }
 
 /**

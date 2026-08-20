@@ -11,7 +11,7 @@
  * пристрій продовжить показувати стару версію з кешу.
  */
 
-const VERSION = '1.9.1';
+const VERSION = '2.0.0';
 const CACHE_NAME = `dreamcut-ops-v${VERSION}`;
 
 const ASSETS = [
@@ -24,6 +24,8 @@ const ASSETS = [
 
   'src/core/id.js',
   'src/core/config.js',
+  'src/core/cache.js',
+  'src/core/context.js',
   'src/core/cloud.js',
   'src/core/account.js',
   'src/core/sharing.js',
@@ -48,6 +50,7 @@ const ASSETS = [
 
   'src/ui/dom.js',
   'src/ui/sheet.js',
+  'src/ui/context-bar.js',
   'src/ui/router.js',
   'src/ui/components.js',
   'src/ui/editors.js',
@@ -67,6 +70,7 @@ const ASSETS = [
   'src/ui/views/account.js',
   'src/ui/views/team-projects.js',
   'src/ui/views/team-project.js',
+  'src/ui/views/firm.js',
 
   'assets/icons/icon-180.png',
   'assets/icons/icon-192.png',

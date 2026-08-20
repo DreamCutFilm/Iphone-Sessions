@@ -9,7 +9,8 @@ import { el, emptyState } from '../dom.js';
 import { pageHeader, sectionTitle, chip, dueVariant } from '../components.js';
 import { navigate } from '../router.js';
 import { isSignedIn } from '../../core/cloud.js';
-import { activeCompany } from '../../core/account.js';
+import { currentCompany } from '../../core/context.js';
+import { freshnessNote } from '../context-bar.js';
 import { companyProjects, sharedProfit } from '../../core/sharing.js';
 import { statusLabel } from '../../core/models.js';
 import { formatMoney } from '../../core/locale.js';
@@ -28,7 +29,7 @@ export function teamProjectsView() {
     return page;
   }
 
-  const company = activeCompany();
+  const company = currentCompany();
   if (!company) {
     page.append(emptyState(
       'Ти ще не у фірмі',
@@ -48,9 +49,9 @@ export function teamProjectsView() {
 async function load(host, company) {
   host.replaceChildren(sectionTitle(company.name), el('p.settings-note', 'Завантажую…'));
 
-  let projects;
+  let result;
   try {
-    projects = await companyProjects(company.id);
+    result = await companyProjects(company.id);
   } catch (error) {
     host.replaceChildren(
       sectionTitle(company.name),
@@ -61,6 +62,8 @@ async function load(host, company) {
     );
     return;
   }
+
+  const projects = result.value;
 
   if (!projects.length) {
     host.replaceChildren(
@@ -76,6 +79,9 @@ async function load(host, company) {
 
   const parts = [sectionTitle(company.name, el('span.section-hint', plural(projects.length, 'проєкт', 'проєкти', 'проєктів')))];
   parts.push(el('div.list', projects.map((project) => projectCard(project))));
+  const stale = freshnessNote(result, () => load(host, company));
+  if (stale) parts.push(stale);
+
   parts.push(el('div.form', el('button.btn.btn--ghost.btn--wide', {
     type: 'button', onclick: () => load(host, company),
   }, '⟳ Оновити')));

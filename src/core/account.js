@@ -4,24 +4,7 @@
 // («директор може виганяти»), а не назви таблиць.
 
 import { rpc, query, insert, patch, remove, currentUser } from './cloud.js';
-import { readJson, writeJson, removeKey } from './storage.js';
-
-// Яку фірму застосунок вважає поточною.
-//
-// Зберігається на пристрої, а не питається щоразу в мережі: екран проєктів
-// має відкриватися миттєво й показувати бодай назву фірми, навіть коли звʼязку
-// немає. Людина майже завжди в одній фірмі — і зайве питання «в якій саме»
-// їй нічого не дає.
-const ACTIVE_KEY = 'dreamcut.company.v1';
-
-export function activeCompany() {
-  return readJson(ACTIVE_KEY, null);
-}
-
-export function setActiveCompany(company) {
-  if (company) writeJson(ACTIVE_KEY, { id: company.id, name: company.name, role: company.role });
-  else removeKey(ACTIVE_KEY);
-}
+import { rememberCompanies } from './context.js';
 
 export const ROLES = [
   { id: 'owner', label: 'Директор', hint: 'Бачить заробіток, керує людьми' },
@@ -76,9 +59,15 @@ export async function myCompanies() {
     filter: `user_id=eq.${currentUser()?.id}`,
   });
 
-  return (rows ?? [])
+  const companies = (rows ?? [])
     .filter((row) => row.companies)
     .map((row) => ({ ...row.companies, role: row.role, title: row.title }));
+
+  // Список одразу лягає на пристрій: перемикач фірм має малюватися ще до
+  // того, як мережа відповість, а після виходу з фірми — сам себе виправити.
+  rememberCompanies(companies);
+
+  return companies;
 }
 
 export async function createCompany({ name, slug, city, about, listed = true }) {

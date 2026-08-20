@@ -9,7 +9,8 @@ import { el, emptyState } from '../dom.js';
 import { pageHeader, sectionTitle, chip, dueVariant } from '../components.js';
 import { navigate } from '../router.js';
 import { isSignedIn } from '../../core/cloud.js';
-import { activeCompany } from '../../core/account.js';
+import { currentCompany } from '../../core/context.js';
+import { freshnessNote } from '../context-bar.js';
 import {
   companyProjects, sharedTasks, sharedItems, projectPayoutRows, sharedProfit,
 } from '../../core/sharing.js';
@@ -23,7 +24,7 @@ export function teamProjectView(projectId) {
   const page = el('div.page');
   page.append(pageHeader('Проєкт фірми', { back: '/team-projects' }));
 
-  if (!isSignedIn() || !activeCompany()) {
+  if (!isSignedIn() || !currentCompany()) {
     page.append(emptyState('Потрібен акаунт', 'Спільні проєкти живуть у фірмі.'));
     return page;
   }
@@ -38,11 +39,12 @@ export function teamProjectView(projectId) {
 async function load(host, projectId) {
   host.replaceChildren(el('p.settings-note', 'Завантажую…'));
 
-  const company = activeCompany();
+  const company = currentCompany();
   let project;
+  let result;
   try {
-    const all = await companyProjects(company.id);
-    project = all.find((entry) => entry.id === projectId) ?? null;
+    result = await companyProjects(company.id);
+    project = result.value.find((entry) => entry.id === projectId) ?? null;
   } catch (error) {
     host.replaceChildren(
       el('p.settings-note', error?.message ?? 'Немає звʼязку з сервером'),
@@ -63,6 +65,9 @@ async function load(host, projectId) {
   }
 
   const parts = [];
+
+  const stale = freshnessNote(result, () => load(host, projectId));
+  if (stale) parts.push(stale);
 
   parts.push(el('h2.page-title', project.title));
   if (project.client) parts.push(el('p.page-subtitle', project.client));
@@ -120,7 +125,7 @@ async function loadTasks(host, project) {
 
   let tasks;
   try {
-    tasks = await sharedTasks(project.id);
+    tasks = (await sharedTasks(project.id)).value;
   } catch {
     host.replaceChildren(sectionTitle('Що зробити'), el('p.settings-note', 'Не вдалося завантажити.'));
     return;
@@ -173,7 +178,7 @@ async function loadItems(host, project) {
 
   let items;
   try {
-    items = await sharedItems(project.id);
+    items = (await sharedItems(project.id)).value;
   } catch {
     host.replaceChildren(sectionTitle('Що везти'), el('p.settings-note', 'Не вдалося завантажити.'));
     return;
@@ -247,7 +252,7 @@ async function loadMoney(host, project) {
   host.append(payoutsHost);
 
   try {
-    const payouts = await projectPayoutRows(project.id);
+    const payouts = (await projectPayoutRows(project.id)).value;
     if (payouts.length > 1 || (payouts.length === 1 && !payouts[0].isMine)) {
       payoutsHost.replaceChildren(
         sectionTitle('Гонорари'),
