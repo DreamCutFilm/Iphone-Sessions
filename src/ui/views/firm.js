@@ -11,8 +11,10 @@ import { isSignedIn } from '../../core/cloud.js';
 import { knownCompanies, getContext, setContext } from '../../core/context.js';
 import { teamOf, roleLabel, canManage, changeRole, removeMember, ROLES } from '../../core/account.js';
 import { companyProjects } from '../../core/sharing.js';
+import { importCatalog } from '../../core/catalog.js';
+import { getState } from '../../core/store.js';
 import { statusLabel } from '../../core/models.js';
-import { describeDue } from '../../core/dates.js';
+import { describeDue, plural } from '../../core/dates.js';
 import { freshnessNote } from '../context-bar.js';
 import { openSheet, closeSheet, confirmSheet, field, formBody, textInput, selectInput } from '../sheet.js';
 import {
@@ -106,6 +108,8 @@ export function firmDetailView(companyId) {
           navigate('/overview');
         },
       }, `Працювати у «${company.name}»`)));
+
+  appendIf(page, catalogBlock(company));
 
   const teamHost = el('div');
   const rolesHost = el('div');
@@ -206,6 +210,61 @@ async function loadProjects(host, company) {
   appendIf(host, freshnessNote(result, () => loadProjects(host, company)));
 }
 
+
+/**
+ * Каталоги фірми — вхід і перенесення.
+ *
+ * Каталог, зібраний за рік, ніхто не вбиватиме руками вдруге. Тому поруч
+ * із входом стоїть кнопка перенесення: вона везе техніку й людей із цього
+ * телефона у фірму. Кожна позиція памʼятає свій місцевий номер, тож
+ * повторний перенос оновлює те саме, а не створює другий комплект.
+ */
+function catalogBlock(company) {
+  const perms = permissionsOf(company);
+  const state = getState();
+  const mine = state.equipment.length + state.crew.length;
+
+  const block = el('div');
+  block.append(sectionTitle('Каталоги фірми'));
+
+  block.append(el('div.list',
+    el('article.row', { onclick: () => navigate('/equipment') },
+      el('span.row-mark', '🎒'),
+      el('div.row-body', el('p.row-title', 'Техніка'), el('p.row-note', 'Що є у фірми й де це брати')),
+      el('span.card-chevron', '›')),
+    el('article.row', { onclick: () => navigate('/crew') },
+      el('span.row-mark', '👥'),
+      el('div.row-body', el('p.row-title', 'Команда'), el('p.row-note', 'Кого наймаємо й за скільки')),
+      el('span.card-chevron', '›'))));
+
+  if (perms.can_edit && mine > 0) {
+    block.append(el('div.form',
+      el('button.btn.btn--ghost.btn--wide', {
+        type: 'button',
+        onclick: async (event) => {
+          const button = event.currentTarget;
+          button.disabled = true;
+          button.textContent = 'Переношу…';
+          try {
+            const moved = await importCatalog(company.id, getState());
+            toast(`Перенесено позицій: ${moved}`);
+            navigate('/equipment');
+          } catch (error) {
+            toast(error?.message ?? 'Немає звʼязку з сервером', { error: true });
+          } finally {
+            button.disabled = false;
+            button.textContent = '↑ Перенести мій каталог у фірму';
+          }
+        },
+      }, '↑ Перенести мій каталог у фірму'),
+      el('p.settings-note',
+        `На цьому телефоні ${plural(mine, 'позиція', 'позиції', 'позицій')} у власних каталогах. `
+        + 'Перенесення нічого не стирає: власні каталоги лишаються на місці, '
+        + 'а повторний перенос оновлює вже перенесене, а не дублює його.')));
+  }
+
+  return block;
+}
 
 // --- Ролі -------------------------------------------------------------------
 

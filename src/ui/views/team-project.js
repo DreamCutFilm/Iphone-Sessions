@@ -17,7 +17,7 @@ import {
 import { statusLabel } from '../../core/models.js';
 import { categoryLabel } from '../../core/equipment.js';
 import { formatMoney } from '../../core/locale.js';
-import { formatDate, describeDue, weekdayShort, daysUntil } from '../../core/dates.js';
+import { formatDate, describeDue, weekdayShort, daysUntil, plural } from '../../core/dates.js';
 import { mapsLink, isValidCoordinate, formatCoordinates } from '../../core/geo.js';
 
 export function teamProjectView(projectId) {
@@ -198,7 +198,8 @@ async function loadItems(host, project) {
   // дінеться, а по орендоване треба їхати, і часто не туди, де знімаєш.
   if (rented.length) {
     parts.push(el('p.settings-note',
-      `${rented.length} ${rented.length === 1 ? 'позиція береться' : 'позицій беруться'} в ренталі — по неї треба заїхати.`));
+      `${plural(rented.length, 'позиція', 'позиції', 'позицій')} `
+      + `${rented.length === 1 ? 'береться' : 'беруться'} в ренталі — по неї треба заїхати.`));
   }
 
   parts.push(el('div.list', items.map((item) => el(

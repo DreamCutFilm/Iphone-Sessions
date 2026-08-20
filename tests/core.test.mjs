@@ -25,6 +25,7 @@ import { makeSlug, isValidSlug, generateCode, roleLabel, canManage } from '../sr
 import { createCrew, crewLabel, clientRate, crewMargin, normalizeCrew } from '../src/core/crew.js';
 import { buildProjectPayload, unlinkedPayouts, sharedProfit } from '../src/core/sharing.js';
 import { permissionsOf, emptyRole, describeRole, sensitiveGrants } from '../src/core/roles.js';
+import { buildCatalogPayload } from '../src/core/catalog.js';
 import {
   createEstimate, createItem, itemAmount, estimateTotals,
   totalsByCategory, clientView, itemFromEquipment, estimateToText, describeItemCount,
@@ -1009,4 +1010,34 @@ test('ролі: небезпечні дозволи називаються пе�
 
   assert.deepEqual(risky, ['can_see_client_money', 'can_manage_team']);
   assert.ok(!sensitiveGrants(emptyRole('Оператор')).length, 'сама лише оренда не тривожить');
+});
+
+test('каталог: у фірму їде те саме, що в телефоні, з місцевими номерами', () => {
+  const camera = createEquipment({
+    title: 'Sony FX6', category: 'camera', ownership: 'own',
+    dayRate: 3000, dayCost: 1000, notes: 'З акумуляторами',
+  });
+  const petro = createCrew({ name: 'Петро', role: 'Оператор', fee: 4000, rate: 6000, email: 'P@Example.com' });
+  petro.userId = 'user-1';
+
+  const payload = buildCatalogPayload({ equipment: [camera], crew: [petro] });
+
+  assert.equal(payload.equipment.length, 1);
+  assert.equal(payload.equipment[0].local_id, camera.id, 'позиція везе свій номер — інакше перенос дублює');
+  assert.equal(payload.equipment[0].day_rate, 3000);
+  assert.equal(payload.equipment[0].day_cost, 1000);
+  assert.equal(payload.equipment[0].notes, 'З акумуляторами');
+
+  assert.equal(payload.crew[0].local_id, petro.id);
+  assert.equal(payload.crew[0].fee, 4000);
+  assert.equal(payload.crew[0].email, 'p@example.com', 'пошта вже зведена до нижнього регістру');
+  assert.equal(payload.crew[0].user_id, 'user-1');
+});
+
+test('каталог: порожні каталоги дають порожній пакунок, а не поламаний', () => {
+  const payload = buildCatalogPayload({ equipment: [], crew: [] });
+  assert.deepEqual(payload, { equipment: [], crew: [] });
+
+  const missing = buildCatalogPayload({});
+  assert.deepEqual(missing, { equipment: [], crew: [] });
 });

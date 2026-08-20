@@ -1128,3 +1128,219 @@ grant execute on function public.my_company_tasks(uuid) to authenticated;
 grant execute on function public.unpublish_project(uuid, text) to authenticated;
 grant execute on function public.company_projects(uuid) to authenticated;
 grant execute on function public.project_payouts(uuid) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 11. Каталоги фірми: техніка й команда
+-- ---------------------------------------------------------------------------
+-- Досі каталоги жили на телефоні того, хто їх завів. Двоє адміністраторів
+-- вели два різні списки тієї самої техніки, а людина з команди не бачила
+-- жодного. Тепер каталог один на фірму.
+--
+-- Ціни тут двох сортів, і плутати їх не можна:
+--   day_rate / rate — скільки ставимо КЛІЄНТУ (це гроші клієнта);
+--   day_cost / fee  — у скільки обходиться НАМ (це оренда й гонорари).
+-- Тому й дозволи різні: собівартість видно за «орендою», ціну клієнту —
+-- за «сумами клієнта». Одна колонка не має відкривати іншу.
+
+create table if not exists public.company_equipment (
+  id          uuid primary key default gen_random_uuid(),
+  company_id  uuid not null references public.companies on delete cascade,
+  -- Звідки приїхало з телефона. За цим полем перенесення впізнає, що це
+  -- та сама позиція, а не нова, — і повторний перенос не плодить дублів.
+  local_id    text,
+  title       text not null,
+  category    text not null default 'other',
+  ownership   text not null default 'own',
+  day_rate    numeric(14, 2),
+  day_cost    numeric(14, 2),
+  notes       text,
+  archived    boolean not null default false,
+  updated_at  timestamptz not null default now(),
+  unique (company_id, local_id)
+);
+
+create index if not exists company_equipment_idx on public.company_equipment (company_id, archived);
+
+create table if not exists public.company_crew (
+  id          uuid primary key default gen_random_uuid(),
+  company_id  uuid not null references public.companies on delete cascade,
+  local_id    text,
+  name        text,
+  role        text not null default 'Оператор',
+  -- Скільки платимо людині.
+  fee         numeric(14, 2),
+  -- Скільки ставимо клієнту.
+  rate        numeric(14, 2),
+  phone       text,
+  email       text,
+  -- Хто це у фірмі, якщо людина вже має акаунт.
+  user_id     uuid references public.profiles (id) on delete set null,
+  notes       text,
+  archived    boolean not null default false,
+  updated_at  timestamptz not null default now(),
+  unique (company_id, local_id)
+);
+
+create index if not exists company_crew_idx on public.company_crew (company_id, archived);
+
+alter table public.company_equipment enable row level security;
+alter table public.company_crew      enable row level security;
+
+-- Читає вся команда: список техніки — це робота, а не гроші. Числа підрізає
+-- функція нижче, а не правило доступу: правило вміє лише впустити чи ні,
+-- а нам треба віддати рядок без частини колонок.
+drop policy if exists company_equipment_select on public.company_equipment;
+create policy company_equipment_select on public.company_equipment for select
+  using (public.is_member(company_id));
+
+drop policy if exists company_equipment_write on public.company_equipment;
+create policy company_equipment_write on public.company_equipment for all
+  using (public.can(company_id, 'edit')) with check (public.can(company_id, 'edit'));
+
+-- Каталог людей — інша річ: там чужі гонорари, і бачити їх має не кожен.
+drop policy if exists company_crew_select on public.company_crew;
+create policy company_crew_select on public.company_crew for select
+  using (public.can(company_id, 'payouts') or public.can(company_id, 'edit'));
+
+drop policy if exists company_crew_write on public.company_crew;
+create policy company_crew_write on public.company_crew for all
+  using (public.can(company_id, 'edit')) with check (public.can(company_id, 'edit'));
+
+-- ---------------------------------------------------------------------------
+-- 11а. Що з каталогів видно
+-- ---------------------------------------------------------------------------
+
+create or replace function public.company_gear(p_company uuid)
+returns table (
+  id uuid, local_id text, title text, category text, ownership text,
+  day_rate numeric, day_cost numeric, notes text, archived boolean, can_edit boolean
+)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select
+    e.id, e.local_id, e.title, e.category, e.ownership,
+    -- Ціна для клієнта — гроші клієнта.
+    case when public.can(e.company_id, 'money') then e.day_rate end,
+    -- Собівартість — оренда.
+    case when public.can(e.company_id, 'rental') then e.day_cost end,
+    e.notes, e.archived,
+    public.can(e.company_id, 'edit')
+  from public.company_equipment e
+  where e.company_id = p_company and public.is_member(e.company_id)
+  order by e.archived, e.title;
+$$;
+
+-- Каталог людей. Свій рядок людина бачить завжди — це її власний гонорар.
+create or replace function public.company_people(p_company uuid)
+returns table (
+  id uuid, local_id text, name text, role text,
+  fee numeric, rate numeric, phone text, email text,
+  user_id uuid, notes text, archived boolean, is_me boolean, can_edit boolean
+)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select
+    c.id, c.local_id, c.name, c.role,
+    case when public.can(c.company_id, 'payouts') or c.user_id = auth.uid() then c.fee end,
+    case when public.can(c.company_id, 'money') then c.rate end,
+    case when public.can(c.company_id, 'team') or c.user_id = auth.uid() then c.phone end,
+    case when public.can(c.company_id, 'team') or c.user_id = auth.uid() then c.email end,
+    c.user_id, c.notes, c.archived,
+    coalesce(c.user_id = auth.uid(), false),
+    public.can(c.company_id, 'edit')
+  from public.company_crew c
+  where c.company_id = p_company
+    and public.is_member(c.company_id)
+    and (
+      public.can(c.company_id, 'payouts')
+      or public.can(c.company_id, 'edit')
+      or c.user_id = auth.uid()
+    )
+  order by c.archived, c.role, c.name;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 11б. Перенести свій каталог у фірму
+-- ---------------------------------------------------------------------------
+-- Каталог, зібраний за рік, ніхто не вбиватиме руками вдруге. Переносимо
+-- одним запитом і за local_id: повторний перенос оновлює те саме, а не
+-- створює другий комплект.
+
+create or replace function public.import_catalog(
+  p_company uuid,
+  p_equipment jsonb default '[]'::jsonb,
+  p_crew jsonb default '[]'::jsonb
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  moved integer := 0;
+  batch integer := 0;
+begin
+  if not public.can(p_company, 'edit') then
+    raise exception 'Переносити каталог твоя роль не дозволяє';
+  end if;
+
+  insert into public.company_equipment
+    (company_id, local_id, title, category, ownership, day_rate, day_cost, notes, archived, updated_at)
+  select
+    p_company,
+    item ->> 'local_id',
+    coalesce(nullif(trim(item ->> 'title'), ''), 'Без назви'),
+    coalesce(item ->> 'category', 'other'),
+    coalesce(item ->> 'ownership', 'own'),
+    (item ->> 'day_rate')::numeric,
+    (item ->> 'day_cost')::numeric,
+    nullif(trim(coalesce(item ->> 'notes', '')), ''),
+    coalesce((item ->> 'archived')::boolean, false),
+    now()
+  from jsonb_array_elements(coalesce(p_equipment, '[]'::jsonb)) as item
+  on conflict (company_id, local_id) do update set
+    title = excluded.title, category = excluded.category, ownership = excluded.ownership,
+    day_rate = excluded.day_rate, day_cost = excluded.day_cost, notes = excluded.notes,
+    archived = excluded.archived, updated_at = now();
+
+  get diagnostics batch = row_count;
+  moved := moved + batch;
+
+  insert into public.company_crew
+    (company_id, local_id, name, role, fee, rate, phone, email, user_id, notes, archived, updated_at)
+  select
+    p_company,
+    person ->> 'local_id',
+    nullif(trim(coalesce(person ->> 'name', '')), ''),
+    coalesce(nullif(trim(person ->> 'role'), ''), 'Оператор'),
+    (person ->> 'fee')::numeric,
+    (person ->> 'rate')::numeric,
+    nullif(trim(coalesce(person ->> 'phone', '')), ''),
+    nullif(trim(coalesce(person ->> 'email', '')), ''),
+    -- Звʼязок з акаунтом приймаємо тільки на того, хто справді у фірмі.
+    (select m.user_id from public.memberships m
+      where m.company_id = p_company
+        and m.user_id = nullif(person ->> 'user_id', '')::uuid),
+    nullif(trim(coalesce(person ->> 'notes', '')), ''),
+    coalesce((person ->> 'archived')::boolean, false),
+    now()
+  from jsonb_array_elements(coalesce(p_crew, '[]'::jsonb)) as person
+  on conflict (company_id, local_id) do update set
+    name = excluded.name, role = excluded.role, fee = excluded.fee, rate = excluded.rate,
+    phone = excluded.phone, email = excluded.email, user_id = excluded.user_id,
+    notes = excluded.notes, archived = excluded.archived, updated_at = now();
+
+  get diagnostics batch = row_count;
+  return moved + batch;
+end;
+$$;
+
+grant execute on function public.company_gear(uuid) to authenticated;
+grant execute on function public.company_people(uuid) to authenticated;
+grant execute on function public.import_catalog(uuid, jsonb, jsonb) to authenticated;
