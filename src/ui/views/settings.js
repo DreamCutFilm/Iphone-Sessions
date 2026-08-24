@@ -6,6 +6,7 @@
 // й дозволом на сповіщення.
 
 import { el, toast } from '../dom.js';
+import { menuButton } from '../menu.js';
 import { t } from '../../core/i18n.js';
 import { pageHeader, sectionTitle } from '../components.js';
 import { field, selectInput, numberInput, textInput } from '../sheet.js';
@@ -15,17 +16,12 @@ import { CODECS } from '../../core/cine/media.js';
 import { COMMON_FPS } from '../../core/cine/exposure.js';
 import { LANGUAGES, CURRENCIES, getLanguage, setLanguage, getCurrency, formatMoney } from '../../core/locale.js';
 import { notificationState, requestNotifications } from '../reminders.js';
-import { navigate } from '../router.js';
-import { isSignedIn, currentUser } from '../../core/cloud.js';
 
 export function settingsView() {
   const state = getState();
   const page = el('div.page');
 
-  page.append(pageHeader('Налаштування', { back: '/overview' }));
-
-  page.append(sectionTitle('Акаунт'));
-  page.append(accountBlock());
+  page.append(pageHeader('Налаштування', { lead: menuButton() }));
 
   page.append(sectionTitle('Мова та валюта'));
   page.append(localeBlock(state));
@@ -69,33 +65,6 @@ export function settingsView() {
   page.append(notificationBlock());
 
   return page;
-}
-
-/**
- * Вхід до акаунта — окремим рядком, а не цілим екраном тут.
- *
- * Акаунт живе в мережі, а решта налаштувань — на пристрої. Змішувати їх
- * на одному екрані означало б, що при відсутності звʼязку «заглючать»
- * і сенсор із валютою, які до мережі стосунку не мають.
- */
-function accountBlock() {
-  const signedIn = isSignedIn();
-  const email = currentUser()?.email ?? '';
-
-  return el(
-    'div.list',
-    el(
-      'article.row',
-      { onclick: () => navigate('/account') },
-      el('span.row-mark', signedIn ? '🙋' : '○'),
-      el('div.row-body',
-        el('p.row-title', signedIn ? (email || 'Мій акаунт') : 'Увійти або створити акаунт'),
-        el('p.row-note', signedIn
-          ? 'Фірма, команда, запрошення'
-          : 'Потрібен лише для спільної роботи. Без нього все працює як раніше.')),
-      el('span.card-chevron', '›'),
-    ),
-  );
 }
 
 function localeBlock(state) {

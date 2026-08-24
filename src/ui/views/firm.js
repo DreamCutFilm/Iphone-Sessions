@@ -5,6 +5,7 @@
 // перемкнувся на фірму — і проєкти з задачами вже її.
 
 import { el, emptyState, appendIf, toast } from '../dom.js';
+import { menuButton } from '../menu.js';
 import { t } from '../../core/i18n.js';
 import { pageHeader, sectionTitle, chip, dueVariant } from '../components.js';
 import { navigate } from '../router.js';
@@ -25,7 +26,7 @@ import {
 
 export function firmView() {
   const page = el('div.page');
-  page.append(pageHeader('Фірма'));
+  page.append(pageHeader('Фірма', { lead: menuButton() }));
 
   if (!isSignedIn()) {
     page.append(emptyState(

@@ -7,6 +7,7 @@
 // між вибором сенсора й дозволом на сповіщення.
 
 import { el, toast } from '../dom.js';
+import { menuButton } from '../menu.js';
 import { t } from '../../core/i18n.js';
 import { pageHeader, sectionTitle } from '../components.js';
 import { confirmSheet } from '../sheet.js';
@@ -19,7 +20,7 @@ export function aboutView() {
   const state = getState();
   const page = el('div.page');
 
-  page.append(pageHeader('Про програму', { back: '/overview' }));
+  page.append(pageHeader('Про програму', { lead: menuButton() }));
 
   page.append(el(
     'div.about',

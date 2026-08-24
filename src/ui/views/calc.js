@@ -5,6 +5,7 @@
 // закривалася б клавіатура — користуватися цим на майданчику було б неможливо.
 
 import { el, toast } from '../dom.js';
+import { menuButton } from '../menu.js';
 import { t } from '../../core/i18n.js';
 import { pageHeader, sectionTitle } from '../components.js';
 import { field, selectInput, numberInput, textInput, segmented } from '../sheet.js';
@@ -42,7 +43,7 @@ function remember(toolId, defaults) {
 
 export function calcMenuView() {
   const page = el('div.page');
-  page.append(pageHeader('Кіно', { subtitle: 'Розрахунки для майданчика' }));
+  page.append(pageHeader('Кіно', { subtitle: 'Розрахунки для майданчика', lead: menuButton() }));
   page.append(el('div.tool-grid', TOOLS.map((tool) => el(
     'button.tool',
     { type: 'button', onclick: () => navigate(`/calc/${tool.id}`) },

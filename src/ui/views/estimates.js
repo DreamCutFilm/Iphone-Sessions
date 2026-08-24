@@ -1,6 +1,7 @@
 // Кошториси: список, картка з позиціями, клієнтський вигляд.
 
 import { el, emptyState, toast, appendIf } from '../dom.js';
+import { menuButton } from '../menu.js';
 import { t } from '../../core/i18n.js';
 import { pageHeader, sectionTitle, chip, fab, statTile } from '../components.js';
 import { openSheet, closeSheet } from '../sheet.js';
@@ -17,6 +18,7 @@ import { inCompany, currentCompany } from '../../core/context.js';
 import { contextBar, freshnessNote } from '../context-bar.js';
 import { companyProjects, allFirmEstimates } from '../../core/sharing.js';
 import { permissionsOf } from '../../core/roles.js';
+import { firmEquipment, firmCrew } from '../../core/catalog.js';
 import { editFirmEstimate } from '../firm-project-forms.js';
 import { formatDate, toDateOnly, plural } from '../../core/dates.js';
 
@@ -52,14 +54,19 @@ function firmEstimatesView() {
   }));
   appendIf(page, contextBar());
 
-  page.append(el(
-    'div.catalog-links',
-    el('button.btn.btn--ghost', { type: 'button', onclick: () => navigate('/equipment') }, `🎒 ${t('Техніка')}`),
-    el('button.btn.btn--ghost', { type: 'button', onclick: () => navigate('/crew') }, `👤 ${t('Команда')}`),
-  ));
+  // Лічильники підставляються після завантаження: скільки всього в каталозі
+  // фірми, знає лише сервер. До відповіді кнопки стоять без цифр — порожнє
+  // місце чесніше за нуль, який читався б як «каталог порожній».
+  const gearButton = el('button.btn.btn--ghost',
+    { type: 'button', onclick: () => navigate('/equipment') }, `🎒 ${t('Техніка')}`);
+  const crewButton = el('button.btn.btn--ghost',
+    { type: 'button', onclick: () => navigate('/crew') }, `👤 ${t('Команда')}`);
 
+  page.append(el('div.catalog-links', gearButton, crewButton));
   page.append(host);
+
   loadFirmMoney(host, company);
+  fillCatalogCounts(company, gearButton, crewButton);
 
   return page;
 }
@@ -168,6 +175,17 @@ async function loadFirmMoney(host, company) {
   host.replaceChildren(...parts);
 }
 
+/** Цифри на кнопках каталогів — стільки ж, скільки видно на власному екрані. */
+async function fillCatalogCounts(company, gearButton, crewButton) {
+  try {
+    const [gear, crew] = await Promise.all([firmEquipment(company.id), firmCrew(company.id)]);
+    gearButton.textContent = `🎒 ${t('Техніка')} · ${gear.value.length}`;
+    crewButton.textContent = `👤 ${t('Команда')} · ${crew.value.length}`;
+  } catch {
+    // Каталог не приїхав — кнопки лишаються без цифр і однаково працюють.
+  }
+}
+
 /** Картка кошторису фірми — того ж вигляду, що й власна. */
 function firmEstimateCard(estimate, titles) {
   const totals = estimateTotals(estimate);
@@ -243,6 +261,7 @@ function myEstimatesView() {
 
   page.append(pageHeader('Кошториси', {
     subtitle: t('{count} усього', { count: state.estimates.length }),
+    lead: menuButton(),
     action: el('button.icon-btn', { type: 'button', 'aria-label': 'Новий кошторис', onclick: () => editEstimate() }, '+'),
   }));
 
