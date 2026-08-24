@@ -892,16 +892,25 @@ select.input {
   overflow-y: auto;
 }
 
-.menu-head { padding: 6px 20px 16px; }
+.menu-head { padding: 4px 20px 10px; }
 .menu-title { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
 .menu-note { margin: 3px 0 0; color: var(--muted); font-size: 14px; }
 
-.menu-list { display: flex; flex-direction: column; padding: 4px 10px; }
+.menu-group {
+  margin: 12px 0 2px;
+  padding: 0 22px;
+  color: var(--muted);
+  font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.menu-group:first-of-type { margin-top: 4px; }
+
+.menu-list { display: flex; flex-direction: column; padding: 0 10px; }
 
 .menu-item {
-  display: flex; align-items: center; gap: 14px;
+  display: flex; align-items: center; gap: 13px;
   width: 100%; min-height: var(--tap);
-  padding: 12px 12px;
+  padding: 9px 12px;
   border: 0; border-radius: 12px;
   background: none; color: var(--text);
   font: 16px/1.2 inherit; text-align: left;
@@ -910,7 +919,14 @@ select.input {
 .menu-item:active { background: var(--surface); }
 .menu-item.is-active { background: var(--accent-dim); color: var(--accent); }
 
-.menu-mark { width: 22px; font-size: 18px; text-align: center; }
+.menu-mark { width: 22px; flex: 0 0 22px; font-size: 18px; text-align: center; }
+
+.menu-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.menu-label { font-size: 16px; }
+/* Пояснення має читатися як підпис, а не як другий рядок назви: інакше
+   око спотикається об нього щоразу, коли шукає потрібний пункт. */
+.menu-hint { color: var(--muted); font-size: 12.5px; line-height: 1.25; }
+.menu-item.is-active .menu-hint { color: var(--accent); opacity: 0.75; }
 
 .icon-btn--menu { background: none; font-size: 22px; }
 

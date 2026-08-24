@@ -13,14 +13,56 @@ import { navigate } from './router.js';
 import { isSignedIn } from '../core/cloud.js';
 import { knownCompanies, currentCompany } from '../core/context.js';
 
-// Значки навмисно з того самого набору, що й у нижніх вкладках: одна
-// кольорова емодзі серед чотирьох тонких знаків одразу тягне око на себе
-// й читається як «цей пункт головніший», хоча це неправда.
-const ITEMS = [
-  { path: '/overview', label: 'Головна', mark: '◎' },
-  { path: '/account', label: 'Акаунт', mark: '◉' },
-  { path: '/firm', label: 'Фірми', mark: '⌂' },
-  { path: '/settings', label: 'Налаштування', mark: '⚙' },
+// Повна карта застосунку, поділена за змістом. Саме повна: до цього
+// «Техніка» й «Команда» відкривалися тільки з екрана кошторисів, а
+// «Проєкти фірми» — з екрана проєктів. Людина не мусить знати, з якого
+// саме кута застосунку її пускають у власний каталог техніки.
+//
+// Під кожним пунктом — один рядок про те, що всередині. Слово «Кошториси»
+// без пояснення однаково зрозуміле й для рахунка клієнту, і для звіту про
+// витрати, — а це різні речі.
+//
+// Значки з того самого набору, що й у нижніх вкладках: кольорова емодзі
+// серед тонких знаків тягне око на себе й читається як «цей пункт
+// головніший», хоча це неправда.
+const GROUPS = [
+  {
+    title: 'Робота',
+    items: [
+      { path: '/overview', label: 'Головна', mark: '◎', hint: 'Що сьогодні й що горить' },
+      { path: '/projects', label: 'Проєкти', mark: '▣', hint: 'Зйомки, дедлайни, знімальні дні' },
+      { path: '/tasks', label: 'Задачі', mark: '✓', hint: 'Усе, що треба зробити' },
+      { path: '/ideas', label: 'Ідеї', mark: '✳', hint: 'Блокнот задумів і референсів' },
+    ],
+  },
+  {
+    title: 'Гроші й каталоги',
+    items: [
+      { path: '/estimates', label: 'Кошториси', mark: '∑', hint: 'Рахунки клієнтам і заробіток' },
+      { path: '/equipment', label: 'Техніка', mark: '▤', hint: 'Своя й орендована, з цінами' },
+      { path: '/crew', label: 'Команда', mark: '◍', hint: 'Люди й гонорари за зміну' },
+    ],
+  },
+  {
+    title: 'Фірма',
+    items: [
+      { path: '/firm', label: 'Фірми', mark: '⌂', hint: 'Склад, ролі, спільні каталоги' },
+      { path: '/team-projects', label: 'Проєкти фірми', mark: '▦', hint: 'Спільні зйомки команди', firmOnly: true },
+    ],
+  },
+  {
+    title: 'Інструменти',
+    items: [
+      { path: '/calc', label: 'Кінорозрахунки', mark: 'ƒ', hint: 'Різкість, ND, карти, таймкод, сонце' },
+    ],
+  },
+  {
+    title: 'Застосунок',
+    items: [
+      { path: '/account', label: 'Акаунт', mark: '◉', hint: 'Вхід, фірми, запрошення' },
+      { path: '/settings', label: 'Налаштування', mark: '⚙', hint: 'Мова, валюта, резервні копії' },
+    ],
+  },
 ];
 
 let active = null;
@@ -45,22 +87,17 @@ export function openMenu() {
     el('p.menu-note', whereAmI())));
 
   const current = window.location.hash.replace(/^#/, '') || '/overview';
+  // Пункти, яким без фірми нема куди вести, не показуємо зовсім: порожній
+  // рядок, що щоразу відповідає «спершу увійди», — це не карта, а глухий кут.
+  const hasFirm = isSignedIn() && knownCompanies().length > 0;
 
-  panel.append(el('div.menu-list', ITEMS.map((item) => {
-    const isHere = current === item.path || current.startsWith(`${item.path}/`);
+  for (const group of GROUPS) {
+    const items = group.items.filter((item) => !item.firmOnly || hasFirm);
+    if (!items.length) continue;
 
-    return el('button.menu-item', {
-      type: 'button',
-      class: isHere ? 'is-active' : '',
-      'aria-current': isHere ? 'page' : null,
-      onclick: () => {
-        closeMenu();
-        // Даємо панелі поїхати геть, і лише тоді міняємо екран: інакше
-        // новий екран малюється під ще видимою панеллю й це смикає око.
-        setTimeout(() => navigate(item.path), 120);
-      },
-    }, el('span.menu-mark', item.mark), el('span', item.label));
-  })));
+    panel.append(el('p.menu-group', group.title));
+    panel.append(el('div.menu-list', items.map((item) => menuRow(item, current))));
+  }
 
   backdrop.append(panel);
   document.body.append(backdrop);
@@ -89,6 +126,24 @@ export function closeMenu() {
 
 export function isMenuOpen() {
   return active !== null;
+}
+
+function menuRow(item, current) {
+  const isHere = current === item.path || current.startsWith(`${item.path}/`);
+
+  return el('button.menu-item', {
+    type: 'button',
+    class: isHere ? 'is-active' : '',
+    'aria-current': isHere ? 'page' : null,
+    onclick: () => {
+      closeMenu();
+      // Даємо панелі поїхати геть, і лише тоді міняємо екран: інакше
+      // новий екран малюється під ще видимою панеллю й це смикає око.
+      setTimeout(() => navigate(item.path), 120);
+    },
+  },
+  el('span.menu-mark', item.mark),
+  el('span.menu-text', el('span.menu-label', item.label), el('span.menu-hint', item.hint)));
 }
 
 function onKey(event) {
