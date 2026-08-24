@@ -11,7 +11,7 @@
  * пристрій продовжить показувати стару версію з кешу.
  */
 
-const VERSION = '2.5.0';
+const VERSION = '2.6.0';
 const CACHE_NAME = `dreamcut-ops-v${VERSION}`;
 
 const ASSETS = [
@@ -64,6 +64,7 @@ const ASSETS = [
   'src/ui/idea-share.js',
   'src/ui/reminders.js',
   'src/ui/map-picker.js',
+  'src/ui/menu.js',
   'src/ui/estimate-forms.js',
   'src/ui/firm-forms.js',
   'src/ui/firm-project-forms.js',

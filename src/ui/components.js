@@ -8,10 +8,16 @@ import { formatMoney as formatMoneyIn } from '../core/locale.js';
 import { describeDue, daysUntil, formatDate, weekdayShort, formatDateTime } from '../core/dates.js';
 import { statusLabel } from '../core/models.js';
 
-export function pageHeader(title, { subtitle = null, action = null, back = null } = {}) {
+// `lead` — те, що стоїть зліва від заголовка: кнопка «назад» на внутрішніх
+// екранах або три смужки меню на головному. Обидва разом не трапляються:
+// зліва вгорі є місце рівно для однієї кнопки, і людина має знати наперед,
+// що станеться від натиску в цей кут.
+export function pageHeader(title, { subtitle = null, action = null, back = null, lead = null } = {}) {
   return el(
     'header.page-header',
-    back && el('button.icon-btn.icon-btn--back', { type: 'button', onclick: () => navigate(back) }, '‹'),
+    back
+      ? el('button.icon-btn.icon-btn--back', { type: 'button', onclick: () => navigate(back) }, '‹')
+      : lead,
     el('div.page-header-text', el('h1.page-title', title), subtitle && el('p.page-subtitle', subtitle)),
     action,
   );

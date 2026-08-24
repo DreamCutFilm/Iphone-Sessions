@@ -865,6 +865,55 @@ select.input {
   .sheet-backdrop { align-items: center; }
 }
 
+/* --- Бічне меню ---------------------------------------------------------- */
+
+.menu-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; justify-content: flex-start;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 100;
+}
+.menu-backdrop--open { opacity: 1; }
+.menu-backdrop--open .menu-panel { transform: translateX(0); }
+
+.menu-panel {
+  width: min(78vw, 320px);
+  height: 100%;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+  border-right: 1px solid var(--line);
+  /* Виїжджає з-за лівого краю разом із власним safe-area відступом:
+     на iPhone без цього перший пункт ховається під «чубчиком». */
+  padding: calc(var(--safe-top) + 14px) 0 calc(var(--safe-bottom) + 14px);
+  transform: translateX(-100%);
+  transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.3, 1);
+  overflow-y: auto;
+}
+
+.menu-head { padding: 6px 20px 16px; }
+.menu-title { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+.menu-note { margin: 3px 0 0; color: var(--muted); font-size: 14px; }
+
+.menu-list { display: flex; flex-direction: column; padding: 4px 10px; }
+
+.menu-item {
+  display: flex; align-items: center; gap: 14px;
+  width: 100%; min-height: var(--tap);
+  padding: 12px 12px;
+  border: 0; border-radius: 12px;
+  background: none; color: var(--text);
+  font: 16px/1.2 inherit; text-align: left;
+  cursor: pointer;
+}
+.menu-item:active { background: var(--surface); }
+.menu-item.is-active { background: var(--accent-dim); color: var(--accent); }
+
+.menu-mark { width: 22px; font-size: 18px; text-align: center; }
+
+.icon-btn--menu { background: none; font-size: 22px; }
+
 /* Пошана до системного налаштування «зменшити рух» */
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }

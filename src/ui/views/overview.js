@@ -7,6 +7,7 @@ import { pageHeader, sectionTitle, taskRow, statTile, agendaDay, fab, formatMone
 import { isSignedIn } from '../../core/cloud.js';
 import { currentCompany, inCompany } from '../../core/context.js';
 import { contextBar, freshnessNote } from '../context-bar.js';
+import { menuButton } from '../menu.js';
 import { companyProjects, myFirmTasks } from '../../core/sharing.js';
 import { editTask, quickTask } from '../editors.js';
 import { navigate } from '../router.js';
@@ -36,7 +37,7 @@ function firmOverview() {
 
   page.append(pageHeader(greeting(), {
     subtitle: `${formatDate(todayISO())}, ${t(weekdayFull())}`,
-    action: el('button.icon-btn', { type: 'button', 'aria-label': 'Налаштування', onclick: () => navigate('/settings') }, '⚙'),
+    lead: menuButton(),
   }));
 
   appendIf(page, contextBar());
@@ -180,7 +181,7 @@ function myOverview() {
 
   page.append(pageHeader(greeting(), {
     subtitle: `${formatDate(todayISO())}, ${t(weekdayFull())}`,
-    action: el('button.icon-btn', { type: 'button', 'aria-label': 'Налаштування', onclick: () => navigate('/settings') }, '⚙'),
+    lead: menuButton(),
   }));
 
   appendIf(page, contextBar());
