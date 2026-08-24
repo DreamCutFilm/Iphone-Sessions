@@ -8,10 +8,12 @@
 // Панель живе окремо від дерева екрана й не перемальовується разом із ним —
 // так само, як панелі знизу.
 
-import { el } from './dom.js';
-import { navigate } from './router.js';
+import { el, appendIf } from './dom.js';
+import { navigate, rerender } from './router.js';
+import { t } from '../core/i18n.js';
 import { isSignedIn } from '../core/cloud.js';
-import { knownCompanies, currentCompany } from '../core/context.js';
+import { knownCompanies, currentCompany, getContext, setContext, MINE } from '../core/context.js';
+import { APP_VERSION } from '../app-meta.js';
 
 // Повна карта застосунку, поділена за змістом. Саме повна: до цього
 // «Техніка» й «Команда» відкривалися тільки з екрана кошторисів, а
@@ -41,6 +43,7 @@ const GROUPS = [
       { path: '/estimates', label: 'Кошториси', mark: '∑', hint: 'Рахунки клієнтам і заробіток' },
       { path: '/equipment', label: 'Техніка', mark: '▤', hint: 'Своя й орендована, з цінами' },
       { path: '/crew', label: 'Команда', mark: '◍', hint: 'Люди й гонорари за зміну' },
+      { path: '/rentals', label: 'Рентал', mark: '⌗', hint: 'Де брати техніку й за скільки', soon: true },
     ],
   },
   {
@@ -53,14 +56,15 @@ const GROUPS = [
   {
     title: 'Інструменти',
     items: [
-      { path: '/calc', label: 'Кінорозрахунки', mark: 'ƒ', hint: 'Різкість, ND, карти, таймкод, сонце' },
+      { path: '/calc', label: 'Калькулятор кіно', mark: 'ƒ', hint: 'Фокусна, різкість, ND, карти, таймкод, сонце' },
     ],
   },
   {
     title: 'Застосунок',
     items: [
       { path: '/account', label: 'Акаунт', mark: '◉', hint: 'Вхід, фірми, запрошення' },
-      { path: '/settings', label: 'Налаштування', mark: '⚙', hint: 'Мова, валюта, резервні копії' },
+      { path: '/settings', label: 'Налаштування', mark: '⚙', hint: 'Мова, валюта, сонце, сповіщення' },
+      { path: '/about', label: 'Про програму', mark: '◇', hint: 'Оновлення, резервні копії, версія' },
     ],
   },
 ];
@@ -86,6 +90,8 @@ export function openMenu() {
     el('p.menu-title', 'DreamCut App'),
     el('p.menu-note', whereAmI())));
 
+  appendIf(panel, contextSwitch());
+
   const current = window.location.hash.replace(/^#/, '') || '/overview';
   // Пункти, яким без фірми нема куди вести, не показуємо зовсім: порожній
   // рядок, що щоразу відповідає «спершу увійди», — це не карта, а глухий кут.
@@ -98,6 +104,17 @@ export function openMenu() {
     panel.append(el('p.menu-group', group.title));
     panel.append(el('div.menu-list', items.map((item) => menuRow(item, current))));
   }
+
+  // Версія внизу — там, де її шукають. Заразом це відповідь на питання
+  // «а в мене оновилось?», яке інакше веде людину блукати екранами.
+  panel.append(el('div.menu-foot',
+    el('button.menu-version', {
+      type: 'button',
+      onclick: () => {
+        closeMenu();
+        setTimeout(() => navigate('/about'), 120);
+      },
+    }, t('Версія {version}', { version: APP_VERSION }))));
 
   backdrop.append(panel);
   document.body.append(backdrop);
@@ -143,11 +160,57 @@ function menuRow(item, current) {
     },
   },
   el('span.menu-mark', item.mark),
-  el('span.menu-text', el('span.menu-label', item.label), el('span.menu-hint', item.hint)));
+  el('span.menu-text',
+    el('span.menu-label', item.label, item.soon ? el('span.menu-soon', 'в розробці') : null),
+    el('span.menu-hint', item.hint)));
 }
 
 function onKey(event) {
   if (event.key === 'Escape') closeMenu();
+}
+
+/**
+ * Перемикач «Моє / фірма» — той самий, що й смугою під заголовком.
+ *
+ * У меню він потрібен тому, що меню — це карта: людина відкриває його,
+ * щоб зрозуміти, де вона й куди може піти. Питання «чиї це дані» —
+ * частина того самого питання, і відповідати на нього деінде дивно.
+ */
+function contextSwitch() {
+  if (!isSignedIn()) return null;
+
+  const companies = knownCompanies();
+  if (!companies.length) return null;
+
+  const context = getContext();
+  const options = [
+    { id: null, name: 'Моє', note: 'Тільки на цьому телефоні', mine: true },
+    ...companies.map((company) => ({ ...company, note: 'Спільні дані фірми', mine: false })),
+  ];
+
+  return el('div.menu-context', options.map((option) => {
+    const isHere = option.mine ? context.kind === 'mine' : context.id === option.id;
+
+    return el('button.menu-context-item', {
+      type: 'button',
+      class: isHere ? 'is-active' : '',
+      'aria-pressed': isHere ? 'true' : 'false',
+      onclick: () => {
+        closeMenu();
+        if (isHere) return;
+        setContext(option.mine
+          ? MINE
+          : { kind: 'company', id: option.id, name: option.name, role: option.role });
+        // Контекст міняє вміст усіх екранів, тож перемальовуємо після того,
+        // як панель поїде: інакше зміна відбувається під нею й непомітно.
+        setTimeout(() => rerender(), 120);
+      },
+    },
+    el('span.menu-mark', isHere ? '●' : '○'),
+    el('span.menu-text',
+      el('span.menu-label', option.name),
+      el('span.menu-hint', option.note)));
+  }));
 }
 
 /**
