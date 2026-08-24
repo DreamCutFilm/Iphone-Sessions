@@ -1,6 +1,7 @@
 // Ідеї — швидкий блокнот для задумів, які приходять не за розкладом.
 
 import { el, emptyState, appendIf } from '../dom.js';
+import { menuButton } from '../menu.js';
 import { t } from '../../core/i18n.js';
 import { inCompany, currentCompany } from '../../core/context.js';
 import { contextBar, freshnessNote } from '../context-bar.js';
@@ -32,6 +33,7 @@ function firmIdeasView() {
 
   page.append(pageHeader('Ідеї', {
     subtitle: company.name,
+    lead: menuButton(),
     action: el('button.icon-btn', { type: 'button', 'aria-label': 'Нова ідея', onclick: () => editIdea() }, '+'),
   }));
 
@@ -143,6 +145,7 @@ function myIdeasView() {
 
   page.append(pageHeader('Ідеї', {
     subtitle: t('{count} збережено', { count: state.ideas.length }),
+    lead: menuButton(),
     action: el('button.icon-btn', { type: 'button', 'aria-label': 'Нова ідея', onclick: () => editIdea() }, '+'),
   }));
 

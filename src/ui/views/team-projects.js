@@ -6,6 +6,7 @@
 // Замість них скрізь одне питання: це число прийшло чи ні.
 
 import { el, emptyState } from '../dom.js';
+import { menuButton } from '../menu.js';
 import { t } from '../../core/i18n.js';
 import { pageHeader, sectionTitle, chip, dueVariant } from '../components.js';
 import { navigate } from '../router.js';
@@ -19,7 +20,7 @@ import { describeDue, plural } from '../../core/dates.js';
 
 export function teamProjectsView() {
   const page = el('div.page');
-  page.append(pageHeader('Проєкти фірми', { back: '/overview' }));
+  page.append(pageHeader('Проєкти фірми', { lead: menuButton() }));
 
   if (!isSignedIn()) {
     page.append(emptyState(

@@ -6,6 +6,7 @@
 // ренталів, а не як «нотатку з телефонами».
 
 import { el, emptyState, appendIf } from '../dom.js';
+import { menuButton } from '../menu.js';
 import { t } from '../../core/i18n.js';
 import { pageHeader, sectionTitle, chip, fab, formatMoney } from '../components.js';
 import { contextBar } from '../context-bar.js';
@@ -24,6 +25,7 @@ export function rentalsView() {
     subtitle: state.rentals.length
       ? plural(state.rentals.length, 'рентал', 'ренталі', 'ренталів')
       : null,
+    lead: menuButton(),
     action: el('button.icon-btn', { type: 'button', 'aria-label': 'Новий рентал', onclick: () => editRental() }, '+'),
   }));
 

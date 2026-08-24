@@ -1,6 +1,7 @@
 // Каталог команди: кого наймаєш і за скільки.
 
 import { el, emptyState } from '../dom.js';
+import { menuButton } from '../menu.js';
 import { t } from '../../core/i18n.js';
 import { plural } from '../../core/dates.js';
 import { pageHeader, sectionTitle, chip, fab, statTile } from '../components.js';
@@ -30,7 +31,7 @@ function firmPeopleView() {
   const company = currentCompany();
   const page = el('div.page');
 
-  page.append(pageHeader('Команда фірми', { subtitle: company.name, back: '/estimates' }));
+  page.append(pageHeader('Команда фірми', { subtitle: company.name, lead: menuButton() }));
 
   const host = el('div');
   page.append(host);
@@ -122,7 +123,7 @@ function myCrewView() {
 
   page.append(pageHeader('Команда', {
     subtitle: plural(team.length, 'людина', 'людини', 'людей'),
-    back: '/estimates',
+    lead: menuButton(),
     action: el('button.icon-btn', { type: 'button', 'aria-label': 'Додати людину', onclick: () => editCrew() }, '+'),
   }));
 

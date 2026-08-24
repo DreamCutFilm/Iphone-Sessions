@@ -1,6 +1,7 @@
 // Проєкти: список за стадіями та картка окремого проєкту.
 
 import { el, emptyState, toast, appendIf } from '../dom.js';
+import { menuButton } from '../menu.js';
 import { t } from '../../core/i18n.js';
 import { pageHeader, sectionTitle, projectCard, taskRow, chip, fab, dueVariant, formatMoney } from '../components.js';
 import { editProject, editTask } from '../editors.js';
@@ -138,6 +139,7 @@ function myProjectsView() {
 
   page.append(pageHeader('Проєкти', {
     subtitle: t('{count} своїх', { count: state.projects.length }),
+    lead: menuButton(),
     action: el('button.icon-btn', { type: 'button', 'aria-label': 'Новий проєкт', onclick: () => editProject() }, '+'),
   }));
 

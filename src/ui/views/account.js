@@ -5,6 +5,7 @@
 // сам показує, що він завантажується або що звʼязку немає.
 
 import { el, toast } from '../dom.js';
+import { menuButton } from '../menu.js';
 import { t, localeTag } from '../../core/i18n.js';
 import { pageHeader, sectionTitle, chip } from '../components.js';
 import {
@@ -43,7 +44,7 @@ function spinner(text = 'Завантажую…') {
 export function accountView() {
   const page = el('div.page');
 
-  page.append(pageHeader('Акаунт', { back: '/settings' }));
+  page.append(pageHeader('Акаунт', { lead: menuButton() }));
 
   if (!isSignedIn()) {
     page.append(signedOutBlock());

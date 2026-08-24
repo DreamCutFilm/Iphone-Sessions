@@ -1,8 +1,8 @@
 // Точка збірки: маршрути, нижня панель вкладок, реакція на зміну даних.
 
 import { el, mount, toast } from './ui/dom.js';
-import { completeGoogleSignIn, isSignedIn } from './core/cloud.js';
-import { knownCompanies, onContextChange } from './core/context.js';
+import { completeGoogleSignIn } from './core/cloud.js';
+import { onContextChange } from './core/context.js';
 import { onLanguageChange, getLanguage } from './core/i18n.js';
 import { route, setNotFound, startRouter, navigate, setNavigationListener, rerender } from './ui/router.js';
 import { subscribe, saveNow } from './core/store.js';
@@ -35,15 +35,12 @@ const TABS = [
   { path: '/calc', label: 'Кіно', mark: 'ƒ' },
 ];
 
-// Вкладка фірми зʼявляється лише тоді, коли фірма справді є. Порожній пункт,
-// який щоразу веде в «спершу увійди», лише займав би місце в тісному ряду —
-// а на iPhone кожна вкладка забирає ширину в решти.
-const FIRM_TAB = { path: '/firm', label: 'Фірма', mark: '⌂' };
-
+// Фірма живе в бічному меню, а не внизу. Раніше її вкладка зʼявлялася
+// й зникала разом із «Кіно», і ряд унизу перебудовувався під ногами — а
+// саме сталість нижніх вкладок і робить їх швидкими: палець запамʼятовує
+// місце, а не читає підписи.
 function visibleTabs() {
-  return isSignedIn() && knownCompanies().length
-    ? [...TABS.slice(0, 5), FIRM_TAB]
-    : TABS;
+  return TABS;
 }
 
 const screen = document.querySelector('#screen');

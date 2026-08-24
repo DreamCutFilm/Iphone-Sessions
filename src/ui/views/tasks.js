@@ -1,6 +1,7 @@
 // Задачі та нагадування — усе, що має термін.
 
 import { el, emptyState, appendIf } from '../dom.js';
+import { menuButton } from '../menu.js';
 import { t } from '../../core/i18n.js';
 import { pageHeader, sectionTitle, taskRow, fab } from '../components.js';
 import { editTask } from '../editors.js';
@@ -35,6 +36,7 @@ export function tasksView() {
 
   page.append(pageHeader('Задачі', {
     subtitle: t('{count} відкритих', { count: open.length }),
+    lead: menuButton(),
     action: el('button.icon-btn', { type: 'button', 'aria-label': 'Нова задача', onclick: () => editTask() }, '+'),
   }));
 

@@ -1,6 +1,7 @@
 // Каталог техніки з цінами оренди.
 
 import { el, emptyState } from '../dom.js';
+import { menuButton } from '../menu.js';
 import { t } from '../../core/i18n.js';
 import { plural } from '../../core/dates.js';
 import { pageHeader, sectionTitle, chip, fab, statTile } from '../components.js';
@@ -29,7 +30,7 @@ function firmGearView() {
   const company = currentCompany();
   const page = el('div.page');
 
-  page.append(pageHeader('Техніка фірми', { subtitle: company.name, back: '/estimates' }));
+  page.append(pageHeader('Техніка фірми', { subtitle: company.name, lead: menuButton() }));
 
   const host = el('div');
   page.append(host);
@@ -123,7 +124,7 @@ function myGearView() {
 
   page.append(pageHeader('Каталог техніки', {
     subtitle: plural(catalog.length, 'позиція', 'позиції', 'позицій'),
-    back: '/estimates',
+    lead: menuButton(),
     action: el('button.icon-btn', { type: 'button', 'aria-label': 'Додати техніку', onclick: () => editEquipment() }, '+'),
   }));
 
