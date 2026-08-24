@@ -11,7 +11,7 @@
  * пристрій продовжить показувати стару версію з кешу.
  */
 
-const VERSION = '2.8.0';
+const VERSION = '2.8.1';
 const CACHE_NAME = `dreamcut-ops-v${VERSION}`;
 
 const ASSETS = [

@@ -44,6 +44,7 @@ function firmEstimatesView() {
 
   page.append(pageHeader('Кошториси', {
     subtitle: company.name,
+    lead: menuButton(),
     action: canEdit
       ? el('button.icon-btn', {
           type: 'button',
@@ -109,17 +110,31 @@ async function loadFirmMoney(host, company) {
   const seesMoney = projects.some((project) => project.fee !== null);
   if (seesMoney) {
     const income = projects.reduce((sum, project) => sum + (project.fee ?? 0), 0);
-    const spend = projects.reduce(
-      (sum, project) => sum + project.rental + project.other + (project.payoutTotal ?? 0), 0);
+    const rental = projects.reduce((sum, project) => sum + project.rental, 0);
+    const payouts = projects.reduce((sum, project) => sum + (project.payoutTotal ?? 0), 0);
+    const other = projects.reduce((sum, project) => sum + project.other, 0);
+    const spend = rental + payouts + other;
     const currency = projects[0]?.currency ?? getState().settings.currency;
 
     parts.push(el('div.tool-hero.hero--inline',
       el('p.tool-hero-value', formatMoney(income - spend, currency)),
       el('p.tool-hero-label', t('лишається фірмі по {projects}', { projects: plural(projects.length, 'проєкті', 'проєктах', 'проєктах') }))));
 
+    // Витрати розписані по рядках, а не згорнуті в «разом»: одна сума нічого
+    // не пояснює, і дивлячись на неї, однаково доводиться перелічувати в
+    // голові, з чого вона склалась.
     parts.push(el('div.result',
       moneyLine('Платять клієнти', formatMoney(income, currency)),
-      moneyLine('Витрати разом', `−${formatMoney(spend, currency)}`)));
+      rental > 0 ? moneyLine('− Оренда техніки', formatMoney(rental, currency)) : null,
+      payouts > 0 ? moneyLine('− Гонорари команді', formatMoney(payouts, currency)) : null,
+      other > 0 ? moneyLine('− Інші витрати', formatMoney(other, currency)) : null,
+      moneyLine('= Лишається фірмі', formatMoney(income - spend, currency), 'accent')));
+
+    parts.push(el('p.settings-note',
+      'Числа зібрані з активних проєктів фірми. «Платять клієнти» — це гонорар '
+      + 'кожного проєкту: він береться з погодженого кошторису, а якщо погодженого '
+      + 'немає — з надісланого, потім із чернетки. Оренда й гонорари — з тих самих '
+      + 'кошторисів. Архівні проєкти не рахуються.'));
   } else {
     const mine = projects.reduce((sum, project) => sum + project.myPayout, 0);
     if (mine > 0) {
@@ -251,8 +266,10 @@ function newFirmEstimate(company, onDone) {
   }).catch((error) => toast(error?.message ?? 'Не вдалося', { error: true }));
 }
 
-function moneyLine(label, value) {
-  return el('div.result-row', el('span.result-label', label), el('span.result-value', value));
+function moneyLine(label, value, variant = '') {
+  return el(`div.result-row${variant ? `.result-row--${variant}` : ''}`,
+    el('span.result-label', label),
+    el('span.result-value', value));
 }
 
 function myEstimatesView() {

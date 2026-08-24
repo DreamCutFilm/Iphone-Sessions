@@ -46,6 +46,7 @@ function firmProjectsView() {
 
   page.append(pageHeader('Проєкти', {
     subtitle: company.name,
+    lead: menuButton(),
     action: mayEdit
       ? el('button.icon-btn', {
           type: 'button',
