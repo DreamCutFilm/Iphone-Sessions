@@ -15,7 +15,9 @@ import {
 import { formatMoney } from '../../core/locale.js';
 import { inCompany, currentCompany } from '../../core/context.js';
 import { contextBar, freshnessNote } from '../context-bar.js';
-import { companyProjects } from '../../core/sharing.js';
+import { companyProjects, allFirmEstimates } from '../../core/sharing.js';
+import { permissionsOf } from '../../core/roles.js';
+import { editFirmEstimate } from '../firm-project-forms.js';
 import { formatDate, toDateOnly, plural } from '../../core/dates.js';
 
 export function estimatesView() {
@@ -26,19 +28,36 @@ export function estimatesView() {
 /**
  * Кошториси очима фірми.
  *
- * Самі кошториси поки живуть на телефоні того, хто їх склав, — вони переїдуть
- * у фірму пізніше. Але гроші проєктів фірма вже знає, і показати їх чесніше,
- * ніж лишити порожній екран із написом «скоро»: керівник побачить суми, а
- * решта — оренду й свій гонорар, рівно як і всюди.
+ * Той самий екран, що й власний: каталоги вгорі, кошториси зібрані за станом,
+ * кнопка «+» на місці. Різниця лише в тому, звідки беруться дані — і в тому,
+ * що суми підрізає сервер: хто не має права бачити гроші клієнта, не отримає
+ * жодного рядка кошторису, зате побачить свої гонорари й оренду.
  */
 function firmEstimatesView() {
   const company = currentCompany();
   const page = el('div.page');
-
-  page.append(pageHeader('Гроші', { subtitle: company.name }));
-  appendIf(page, contextBar());
+  const canEdit = permissionsOf(company).can_edit;
 
   const host = el('div');
+
+  page.append(pageHeader('Кошториси', {
+    subtitle: company.name,
+    action: canEdit
+      ? el('button.icon-btn', {
+          type: 'button',
+          'aria-label': 'Новий кошторис',
+          onclick: () => newFirmEstimate(company, () => loadFirmMoney(host, company)),
+        }, '+')
+      : null,
+  }));
+  appendIf(page, contextBar());
+
+  page.append(el(
+    'div.catalog-links',
+    el('button.btn.btn--ghost', { type: 'button', onclick: () => navigate('/equipment') }, `🎒 ${t('Техніка')}`),
+    el('button.btn.btn--ghost', { type: 'button', onclick: () => navigate('/crew') }, `👤 ${t('Команда')}`),
+  ));
+
   page.append(host);
   loadFirmMoney(host, company);
 
@@ -49,8 +68,12 @@ async function loadFirmMoney(host, company) {
   host.replaceChildren(el('p.settings-note', 'Завантажую…'));
 
   let result;
+  let estimatesResult;
   try {
-    result = await companyProjects(company.id);
+    [result, estimatesResult] = await Promise.all([
+      companyProjects(company.id),
+      allFirmEstimates(company.id),
+    ]);
   } catch (error) {
     host.replaceChildren(
       el('p.settings-note', error?.message ?? 'Немає звʼязку з сервером'),
@@ -62,12 +85,14 @@ async function loadFirmMoney(host, company) {
   }
 
   const projects = result.value.filter((project) => project.status !== 'archived');
+  const estimates = estimatesResult.value;
+  const reload = () => loadFirmMoney(host, company);
   const parts = [];
 
-  const stale = freshnessNote(result, () => loadFirmMoney(host, company));
+  const stale = freshnessNote(result.fresh ? estimatesResult : result, reload);
   if (stale) parts.push(stale);
 
-  if (!projects.length) {
+  if (!projects.length && !estimates.length) {
     parts.push(emptyState('Порожньо', t('У «{company}» ще немає опублікованих проєктів.', { company: company.name })));
     host.replaceChildren(...parts);
     return;
@@ -79,11 +104,11 @@ async function loadFirmMoney(host, company) {
     const income = projects.reduce((sum, project) => sum + (project.fee ?? 0), 0);
     const spend = projects.reduce(
       (sum, project) => sum + project.rental + project.other + (project.payoutTotal ?? 0), 0);
-    const currency = projects[0].currency;
+    const currency = projects[0]?.currency ?? getState().settings.currency;
 
     parts.push(el('div.tool-hero.hero--inline',
       el('p.tool-hero-value', formatMoney(income - spend, currency)),
-      el('p.tool-hero-label', t('лишається фірмі по {count} проєктах', { count: projects.length }))));
+      el('p.tool-hero-label', t('лишається фірмі по {projects}', { projects: plural(projects.length, 'проєкті', 'проєктах', 'проєктах') }))));
 
     parts.push(el('div.result',
       moneyLine('Платять клієнти', formatMoney(income, currency)),
@@ -99,25 +124,113 @@ async function loadFirmMoney(host, company) {
       'Суми, які платять клієнти, бачать директор і адміністратори. Тобі видно оренду техніки й власні гонорари.'));
   }
 
-  parts.push(sectionTitle('По проєктах'));
-  parts.push(el('div.list', projects.map((project) => {
-    const meta = [];
-    if (project.fee !== null) meta.push(chip(`${t('Клієнт')}: ${formatMoney(project.fee, project.currency)}`, 'money'));
-    if (project.rental > 0) meta.push(chip(`${t('Оренда')}: ${formatMoney(project.rental, project.currency)}`));
-    if (project.myPayout > 0) meta.push(chip(`${t('Мій гонорар')}: ${formatMoney(project.myPayout, project.currency)}`, 'money'));
+  // --- Кошториси, зібрані за станом: рівно як на власному екрані ---
+  const titles = new Map(projects.map((project) => [project.id, project.title]));
 
-    return el(
-      'article.card',
-      { onclick: () => navigate(`/team-projects/${project.id}`) },
-      el('div.card-body',
-        el('p.card-title', project.title),
-        project.client && el('p.card-sub', project.client),
-        el('div.row-meta', meta)),
-      el('span.card-chevron', '›'),
-    );
-  })));
+  if (estimates.length) {
+    for (const status of ESTIMATE_STATUSES) {
+      const group = estimates
+        .filter((estimate) => estimate.status === status.id)
+        .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+      if (!group.length) continue;
+
+      parts.push(sectionTitle(status.label, el('span.section-hint', String(group.length))));
+      parts.push(el('div.list', group.map((estimate) => firmEstimateCard(estimate, titles))));
+    }
+  } else if (seesMoney) {
+    parts.push(sectionTitle('Кошториси'));
+    parts.push(emptyState(
+      'Кошторисів ще немає',
+      'Склади перший — позиції беруться з каталогу фірми, а гроші проєкту порахуються самі.',
+    ));
+  }
+
+  if (projects.length) {
+    parts.push(sectionTitle('По проєктах'));
+    parts.push(el('div.list', projects.map((project) => {
+      const meta = [];
+      if (project.fee !== null) meta.push(chip(`${t('Клієнт')}: ${formatMoney(project.fee, project.currency)}`, 'money'));
+      if (project.rental > 0) meta.push(chip(`${t('Оренда')}: ${formatMoney(project.rental, project.currency)}`));
+      if (project.myPayout > 0) meta.push(chip(`${t('Мій гонорар')}: ${formatMoney(project.myPayout, project.currency)}`, 'money'));
+
+      return el(
+        'article.card',
+        { onclick: () => navigate(`/team-projects/${project.id}`) },
+        el('div.card-body',
+          el('p.card-title', project.title),
+          project.client && el('p.card-sub', project.client),
+          el('div.row-meta', meta)),
+        el('span.card-chevron', '›'),
+      );
+    })));
+  }
 
   host.replaceChildren(...parts);
+}
+
+/** Картка кошторису фірми — того ж вигляду, що й власна. */
+function firmEstimateCard(estimate, titles) {
+  const totals = estimateTotals(estimate);
+  const projectTitle = estimate.projectId ? titles.get(estimate.projectId) : null;
+
+  return el(
+    'article.card',
+    {
+      onclick: () => {
+        // Кошторис фірми живе всередині проєкту — там же його й правлять.
+        if (estimate.projectId) navigate(`/team-projects/${estimate.projectId}`);
+      },
+    },
+    el('div.card-body',
+      el('p.card-title', estimate.title),
+      projectTitle && el('p.card-sub', projectTitle),
+      el('div.row-meta',
+        chip(formatMoney(totals.total, estimate.currency), 'money'),
+        chip(plural(totals.itemCount, 'позиція', 'позиції', 'позицій')),
+        totals.margin > 0 ? chip(`${t('маржа')} ${totals.marginPercent}%`) : null)),
+    el('span.card-chevron', '›'),
+  );
+}
+
+/**
+ * Новий кошторис фірми починається з питання «до якого проєкту».
+ *
+ * Кошторис без проєкту у фірмі безпритульний: гроші проєкту рахуються саме
+ * з нього, і залишити його висіти окремо означало б, що суми ніде не
+ * зʼявляться, а людина шукатиме, чому.
+ */
+function newFirmEstimate(company, onDone) {
+  companyProjects(company.id).then((result) => {
+    const projects = result.value.filter((project) => project.status !== 'archived');
+
+    if (!projects.length) {
+      toast('Спершу створи проєкт фірми', { error: true });
+      return;
+    }
+
+    if (projects.length === 1) {
+      editFirmEstimate(null, company, projects[0].id, onDone);
+      return;
+    }
+
+    openSheet({
+      title: 'До якого проєкту',
+      body: el('div.list', projects.map((project) => el(
+        'article.row',
+        {
+          onclick: () => {
+            closeSheet();
+            setTimeout(() => editFirmEstimate(null, company, project.id, onDone), 60);
+          },
+        },
+        el('div.row-body',
+          el('p.row-title', project.title),
+          project.client && el('p.row-note', project.client)),
+        el('span.card-chevron', '›'),
+      ))),
+      actions: [el('button.btn.btn--ghost', { type: 'button', onclick: () => closeSheet() }, 'Скасувати')],
+    });
+  }).catch((error) => toast(error?.message ?? 'Не вдалося', { error: true }));
 }
 
 function moneyLine(label, value) {

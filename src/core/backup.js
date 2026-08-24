@@ -26,6 +26,7 @@ export function buildBackup() {
     equipment: state.equipment,
     crew: state.crew,
     estimates: state.estimates,
+    rentals: state.rentals,
     settings: state.settings,
   };
 }
@@ -68,6 +69,7 @@ export function restoreBackup(rawText) {
     equipment: next.equipment.length,
     crew: next.crew.length,
     estimates: next.estimates.length,
+    rentals: next.rentals.length,
   };
 }
 
@@ -78,10 +80,10 @@ export function restoreBackup(rawText) {
 export function mergeBackup(rawText) {
   const parsed = parseBackup(rawText);
   const state = getState();
-  const added = { projects: 0, tasks: 0, ideas: 0, equipment: 0, crew: 0, estimates: 0 };
+  const added = { projects: 0, tasks: 0, ideas: 0, equipment: 0, crew: 0, estimates: 0, rentals: 0 };
 
   const merged = { ...state, settings: state.settings };
-  for (const collection of ['projects', 'tasks', 'ideas', 'equipment', 'crew', 'estimates']) {
+  for (const collection of ['projects', 'tasks', 'ideas', 'equipment', 'crew', 'estimates', 'rentals']) {
     const known = new Set(state[collection].map((item) => item.id));
     const incoming = Array.isArray(parsed[collection]) ? parsed[collection] : [];
     const fresh = incoming.filter((item) => item && !known.has(item.id));

@@ -357,6 +357,10 @@ body.is-locked { overscroll-behavior: none; }
   margin: 8px 0 4px;
 }
 .banner--shoot { background: linear-gradient(135deg, #3a2408, #241708); border: 1px solid var(--accent-dim); }
+/* Розділ, який працює, але ще не так, як працюватиме. Приглушений навмисно:
+   це попередження, а не свято. */
+.banner--soon { background: var(--surface); border: 1px dashed var(--line); }
+.banner--soon .banner-title { color: var(--muted); }
 .banner-title { margin: 0; font-weight: 600; color: var(--accent); }
 .banner-text { margin: 3px 0 0; font-size: 14px; color: #d5d8dd; }
 
@@ -864,6 +868,113 @@ select.input {
   .sheet { border-radius: 18px; margin-bottom: 5vh; }
   .sheet-backdrop { align-items: center; }
 }
+
+/* --- Бічне меню ---------------------------------------------------------- */
+
+.menu-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; justify-content: flex-start;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 100;
+}
+.menu-backdrop--open { opacity: 1; }
+.menu-backdrop--open .menu-panel { transform: translateX(0); }
+
+.menu-panel {
+  width: min(80vw, 330px);
+  height: 100%;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+  border-right: 1px solid var(--line);
+  /* Виїжджає з-за лівого краю разом із власним safe-area відступом:
+     на iPhone без цього перший пункт ховається під «чубчиком». */
+  padding: calc(var(--safe-top) + 14px) 0 calc(var(--safe-bottom) + 14px);
+  transform: translateX(-100%);
+  transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.3, 1);
+  overflow-y: auto;
+}
+
+.menu-head { padding: 4px 20px 10px; }
+.menu-title { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+.menu-note { margin: 3px 0 0; color: var(--muted); font-size: 14px; }
+
+/* Перемикач «Моє / фірма» вгорі меню. */
+.menu-context {
+  display: flex; flex-direction: column;
+  padding: 0 10px 4px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.menu-context-item {
+  display: flex; align-items: center; gap: 13px;
+  width: 100%; min-height: 42px;
+  padding: 8px 12px;
+  border: 0; border-radius: 12px;
+  background: none; color: var(--text);
+  font: 16px/1.2 inherit; text-align: left;
+  cursor: pointer;
+}
+.menu-context-item:active { background: var(--surface); }
+.menu-context-item.is-active { background: var(--surface); }
+.menu-context-item.is-active .menu-label { color: var(--accent); }
+
+.menu-group {
+  margin: 12px 0 2px;
+  padding: 0 22px;
+  color: var(--muted);
+  font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.menu-group:first-of-type { margin-top: 4px; }
+
+.menu-list { display: flex; flex-direction: column; padding: 0 10px; }
+
+.menu-item {
+  display: flex; align-items: center; gap: 13px;
+  width: 100%; min-height: var(--tap);
+  padding: 9px 12px;
+  border: 0; border-radius: 12px;
+  background: none; color: var(--text);
+  font: 16px/1.2 inherit; text-align: left;
+  cursor: pointer;
+}
+.menu-item:active { background: var(--surface); }
+.menu-item.is-active { background: var(--accent-dim); color: var(--accent); }
+
+.menu-mark { width: 22px; flex: 0 0 22px; font-size: 18px; text-align: center; }
+
+.menu-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.menu-label { font-size: 16px; }
+/* Пояснення має читатися як підпис, а не як другий рядок назви: інакше
+   око спотикається об нього щоразу, коли шукає потрібний пункт. */
+.menu-hint { color: var(--muted); font-size: 12.5px; line-height: 1.25; }
+.menu-item.is-active .menu-hint { color: var(--accent); opacity: 0.75; }
+
+/* «в розробці» — підпис біля назви, а не окрема плашка: інакше він важив би
+   на екрані більше за сам пункт. */
+.menu-soon {
+  margin-left: 7px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em;
+  vertical-align: 1px;
+}
+
+.menu-foot { margin-top: auto; padding: 12px 12px 0; }
+.menu-version {
+  border: 0; background: none;
+  color: var(--muted); font: 13px inherit;
+  padding: 8px 10px; border-radius: 10px;
+  cursor: pointer;
+}
+.menu-version:active { background: var(--surface); }
+
+.icon-btn--menu { background: none; font-size: 22px; }
 
 /* Пошана до системного налаштування «зменшити рух» */
 @media (prefers-reduced-motion: reduce) {

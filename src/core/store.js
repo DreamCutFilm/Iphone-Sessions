@@ -9,6 +9,7 @@ import { normalizeIdea, normalizeProject, normalizeTask } from './models.js';
 import { normalizeEquipment } from './equipment.js';
 import { normalizeEstimate } from './estimates.js';
 import { normalizeCrew } from './crew.js';
+import { normalizeRental } from './rentals.js';
 import { DEFAULT_CURRENCY, DEFAULT_LANGUAGE } from './locale.js';
 
 // Ключ сховища навмисно лишається старим після перейменування застосунку:
@@ -45,6 +46,7 @@ function emptyState() {
     equipment: [],
     crew: [],
     estimates: [],
+    rentals: [],
     settings: { ...DEFAULT_SETTINGS },
   };
 }
@@ -63,6 +65,7 @@ function loadState() {
     equipment: toList(raw.equipment, normalizeEquipment),
     crew: toList(raw.crew, normalizeCrew),
     estimates: toList(raw.estimates, normalizeEstimate),
+    rentals: toList(raw.rentals, normalizeRental),
     settings: { ...DEFAULT_SETTINGS, ...(raw.settings ?? {}) },
   };
 }
@@ -98,6 +101,7 @@ export function update(mutator) {
     equipment: [...state.equipment],
     crew: [...state.crew],
     estimates: [...state.estimates],
+    rentals: [...state.rentals],
     settings: { ...state.settings },
   };
   const result = mutator(draft);
@@ -117,6 +121,7 @@ export function replaceState(next) {
     equipment: toList(next.equipment, normalizeEquipment),
     crew: toList(next.crew, normalizeCrew),
     estimates: toList(next.estimates, normalizeEstimate),
+    rentals: toList(next.rentals, normalizeRental),
     settings: { ...DEFAULT_SETTINGS, ...(next.settings ?? {}) },
   };
   saveNow();
@@ -156,6 +161,7 @@ const COLLECTIONS = {
   equipment: 'equipment',
   crew: 'crew',
   estimates: 'estimates',
+  rentals: 'rentals',
 };
 
 export function addItem(collection, item) {
